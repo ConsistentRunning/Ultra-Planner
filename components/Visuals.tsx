@@ -28,6 +28,7 @@ interface VisualsProps {
 }
 
 interface CustomTooltipProps extends TooltipProps<number, string> {
+    active?: boolean;
     startDateTime: Date;
     isLegMode: boolean;
     nightFrom: string;
@@ -105,6 +106,8 @@ const TimeBreakdown: React.FC<{ computation: ComputationResult, openTimeBreakdow
         { label: 'Night', time: night, color: 'bg-indigo-500' },
     ].filter(item => Math.abs(item.time) > 1);
 
+    const totalForBar = breakdownItems.reduce((sum, item) => sum + item.time, 0);
+
     return (
         <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -120,7 +123,7 @@ const TimeBreakdown: React.FC<{ computation: ComputationResult, openTimeBreakdow
                     <div
                         key={label}
                         className={`${color} transition-all duration-300`}
-                        style={{ width: `${(time / totalDuration) * 100}%` }}
+                        style={{ width: `${(time / totalForBar) * 100}%` }}
                         title={`${label}: ${fmtTime(time)}`}
                     />
                 ))}

@@ -1,10 +1,9 @@
 
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Leg, Terrain, TerrainSegment } from '../types';
 import { Button } from './ui/Button';
 import { Input, Select, RangeInput } from './ui/Input';
-import { formatMinutes, getFatigueReset } from '../utils';
+import { formatMinutes, getFatigueReset, getMuscularFatigueReset } from '../utils';
 
 interface LegsEditorProps {
     legs: Leg[];
@@ -18,6 +17,7 @@ interface LegsEditorProps {
     isSleepPlanned: boolean;
     openLegsInfoModal: () => void;
     openAutoNotesInfoModal: () => void;
+    openFromDistInfoModal: () => void;
     openAidStationModal: () => void;
     setTuningLeg: (leg: Leg | null) => void;
     onFocusLeg: (legId: string) => void;
@@ -25,7 +25,7 @@ interface LegsEditorProps {
     onOpenMentalStrategy: () => void;
 }
 
-const terrains: Terrain[] = ["road", "smooth", "mixed", "technical", "sandy"];
+const terrains: Terrain[] = ["road", "smooth", "mixed", "technical", "sandy", "slow"];
 
 const Checkbox: React.FC<{ leg: Leg, field: keyof Leg, label: string, updateLeg: (id: string, key: keyof Leg, value: any) => void; }> = ({ leg, field, label, updateLeg }) => (
     <label className="flex items-center gap-2 text-sm text-muted cursor-pointer hover:text-text">
@@ -42,13 +42,14 @@ const Checkbox: React.FC<{ leg: Leg, field: keyof Leg, label: string, updateLeg:
 export const LegsEditor: React.FC<LegsEditorProps> = ({
     legs, setLegs, isLegMode, setIsLegMode,
     simpleGain, setSimpleGain, simpleLoss, setSimpleLoss, simpleTerrain, setSimpleTerrain,
-    distanceKm, isSleepPlanned, openLegsInfoModal, openAutoNotesInfoModal, openAidStationModal, setTuningLeg, onFocusLeg,
+    distanceKm, isSleepPlanned, openLegsInfoModal, openAutoNotesInfoModal, openFromDistInfoModal, openAidStationModal, setTuningLeg, onFocusLeg,
     onAutoFillNotes, onOpenMentalStrategy
 }) => {
     const [pasteText, setPasteText] = useState("12.6, 13.3, 11.5, 16.4, 12.3");
     const [splitCount, setSplitCount] = useState(6);
     const [defaultTerrain, setDefaultTerrain] = useState<Terrain>('mixed');
     const [isAutoFillOpen, setIsAutoFillOpen] = useState(false);
+    const [autoFillTargets, setAutoFillTargets] = useState({ runner: true, crew: true, pacer: true });
     const autoFillRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -63,9 +64,13 @@ export const LegsEditor: React.FC<LegsEditorProps> = ({
         };
     }, [autoFillRef]);
 
-    const handleAutoFill = (targets: { runner: boolean; crew: boolean; pacer: boolean; }) => {
-        onAutoFillNotes(targets);
+    const handleApplyAutoFill = () => {
+        onAutoFillNotes(autoFillTargets);
         setIsAutoFillOpen(false);
+    };
+
+    const handleAutoFillTargetChange = (target: 'runner' | 'crew' | 'pacer') => {
+        setAutoFillTargets(prev => ({ ...prev, [target]: !prev[target] }));
     };
 
     const updateLeg = (id: string, key: keyof Leg, value: any) => {
@@ -101,7 +106,7 @@ export const LegsEditor: React.FC<LegsEditorProps> = ({
     };
     
     const buildFromPaste = () => {
-        const newLegs = pasteText.split(/[, ]+/).map(x => +x).filter(x => x > 0).map(dist => ({
+        const newLegs = pasteText.split(/[, \n]+/).map(x => +x).filter(x => x > 0).map(dist => ({
             id: Math.random().toString(36).substring(2, 9),
             name: '',
             dist, gain: 0, loss: 0, terrain: defaultTerrain, stop: 0, sleepMinutes: 0, notes: '', runnerNotes: '', pacerNotes: '', cutoff: '', crewAccess: false, pacerIn: false, pacerOut: false, dropBag: false
@@ -150,7 +155,7 @@ export const LegsEditor: React.FC<LegsEditorProps> = ({
                     <Input label="Total gain (m)" type="number" value={simpleGain} onChange={e => setSimpleGain(+e.target.value)} />
                     <Input label="Total loss (m)" type="number" value={simpleLoss} onChange={e => setSimpleLoss(+e.target.value)} />
                     <Select label="Default terrain" value={simpleTerrain} onChange={e => setSimpleTerrain(e.target.value as Terrain)}>
-                        {terrains.map(t => <option key={t} value={t}>{t}</option>)}
+                        {terrains.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}
                     </Select>
                  </div>
             )}
@@ -161,7 +166,12 @@ export const LegsEditor: React.FC<LegsEditorProps> = ({
                         <h3 className="text-base font-semibold text-accent">Create Legs</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                             <div className="space-y-2 flex flex-col">
-                                <label className="text-sm font-medium text-muted">From Distances List</label>
+                                 <div className="flex items-center gap-2">
+                                    <label className="text-sm font-medium text-muted">From Distances List</label>
+                                    <button onClick={openFromDistInfoModal} type="button" aria-label="More information on creating legs from a list" className="text-muted hover:text-accent transition-colors">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+                                    </button>
+                                </div>
                                 <Input placeholder="e.g. 12.6, 13.3, 11.5..." value={pasteText} onChange={e => setPasteText(e.target.value)}/>
                                 <Button onClick={buildFromPaste} className="w-full sm:w-auto">Build Legs from List</Button>
                             </div>
@@ -173,7 +183,7 @@ export const LegsEditor: React.FC<LegsEditorProps> = ({
                         </div>
                         <div className="pt-2">
                              <Select label="Default terrain for new legs" value={defaultTerrain} onChange={e => setDefaultTerrain(e.target.value as Terrain)}>
-                                {terrains.map(t => <option key={t} value={t}>{t}</option>)}
+                                {terrains.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}
                             </Select>
                         </div>
                     </div>
@@ -207,13 +217,23 @@ export const LegsEditor: React.FC<LegsEditorProps> = ({
                                 </Button>
                             </div>
                             {isAutoFillOpen && (
-                                <div className="origin-top-left absolute left-0 mt-2 w-56 rounded-md shadow-lg bg-slate-700 ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
-                                    <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                                        <a href="#" onClick={(e) => { e.preventDefault(); handleAutoFill({ runner: true, crew: true, pacer: true }); }} className="text-slate-200 block px-4 py-2 text-sm hover:bg-slate-600 rounded-t-md">Fill All Notes</a>
-                                        <a href="#" onClick={(e) => { e.preventDefault(); handleAutoFill({ runner: true, crew: false, pacer: false }); }} className="text-slate-200 block px-4 py-2 text-sm hover:bg-slate-600">Fill Runner Notes</a>
-                                        <a href="#" onClick={(e) => { e.preventDefault(); handleAutoFill({ runner: false, crew: true, pacer: false }); }} className="text-slate-200 block px-4 py-2 text-sm hover:bg-slate-600">Fill Crew Notes</a>
-                                        <a href="#" onClick={(e) => { e.preventDefault(); handleAutoFill({ runner: false, crew: false, pacer: true }); }} className="text-slate-200 block px-4 py-2 text-sm hover:bg-slate-600 rounded-b-md">Fill Pacer Cards</a>
-                                    </div>
+                                <div className="origin-top-left absolute left-0 mt-2 w-56 rounded-md shadow-lg bg-slate-700 ring-1 ring-black ring-opacity-5 focus:outline-none z-10 p-4 space-y-3">
+                                    <div className="text-sm font-semibold text-text">Select note types to fill:</div>
+                                    <label className="flex items-center gap-2 cursor-pointer text-slate-200 hover:text-white">
+                                        <input type="checkbox" checked={autoFillTargets.runner} onChange={() => handleAutoFillTargetChange('runner')} className="h-4 w-4 rounded accent-accent bg-slate-800 border-slate-600"/>
+                                        <span>Runner Notes</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer text-slate-200 hover:text-white">
+                                        <input type="checkbox" checked={autoFillTargets.crew} onChange={() => handleAutoFillTargetChange('crew')} className="h-4 w-4 rounded accent-accent bg-slate-800 border-slate-600"/>
+                                        <span>Crew Notes</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer text-slate-200 hover:text-white">
+                                        <input type="checkbox" checked={autoFillTargets.pacer} onChange={() => handleAutoFillTargetChange('pacer')} className="h-4 w-4 rounded accent-accent bg-slate-800 border-slate-600"/>
+                                        <span>Pacer Cards</span>
+                                    </label>
+                                    <Button onClick={handleApplyAutoFill} variant="primary" className="w-full mt-2">
+                                        Apply
+                                    </Button>
                                 </div>
                             )}
                         </div>
@@ -261,109 +281,58 @@ export const LegsEditor: React.FC<LegsEditorProps> = ({
                                             />
                                         </div>
                                     ) : null;
-
+                                    
                                     if (leg.pacerOut) isPacerActive = false;
 
                                     return (
-                                        <div key={leg.id} className="bg-slate-800 p-3 rounded-lg">
+                                        <div key={leg.id} className="bg-panel/50 border border-slate-700 rounded-lg p-3 space-y-3">
                                             <div className="flex justify-between items-center">
-                                                <h4 className="font-bold text-text">Leg {idx + 1}</h4>
-                                                <div className="flex items-center">
-                                                    <Button onClick={() => onFocusLeg(leg.id)} title="View on plan" variant="secondary" className="!w-7 !h-7 !p-0 flex items-center justify-center !rounded-full mr-2">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                                                          <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                                                        </svg>
-                                                    </Button>
-                                                    <Button onClick={() => deleteLeg(leg.id)} variant="danger" className="!w-7 !h-7 !p-0 flex items-center justify-center !rounded-full">✕</Button>
+                                                <div className="flex items-center gap-2">
+                                                    <button onClick={() => onFocusLeg(leg.id)} title="Focus on this leg in the plan" className="text-muted hover:text-accent transition-colors p-1 rounded-full hover:bg-slate-700">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                                    </button>
+                                                    <h4 className="font-semibold text-lg">Leg {idx + 1}</h4>
                                                 </div>
+                                                <Button onClick={() => deleteLeg(leg.id)} variant="danger" className="!px-2 !py-1 !text-xs !rounded-md">Delete</Button>
                                             </div>
-
-                                            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 items-end">
-                                                <Input label="Aid Station Name (at end of leg)" placeholder={`Aid ${idx + 1}`} value={leg.name || ''} onChange={e => updateLeg(leg.id, 'name', e.target.value)} />
-                                                <div className="flex flex-wrap gap-x-4 gap-y-1 pb-1">
-                                                    <Checkbox leg={leg} field="crewAccess" label="Crew" updateLeg={updateLeg} />
-                                                    <Checkbox leg={leg} field="pacerIn" label="Pacer In" updateLeg={updateLeg} />
-                                                    <Checkbox leg={leg} field="pacerOut" label="Pacer Out" updateLeg={updateLeg} />
-                                                    <Checkbox leg={leg} field="dropBag" label="Drop Bag" updateLeg={updateLeg} />
-                                                </div>
-                                            </div>
-
-                                            <div className="mt-3 grid grid-cols-6 gap-4">
-                                                <div className="col-span-6 sm:col-span-2"><Input label="Dist (km)" type="number" step="0.1" value={leg.dist} onChange={e => updateLeg(leg.id, 'dist', +e.target.value)} /></div>
-                                                <div className="col-span-3 sm:col-span-2"><Input label="Gain (m)" type="number" value={leg.gain} onChange={e => updateLeg(leg.id, 'gain', +e.target.value)} /></div>
-                                                <div className="col-span-3 sm:col-span-2"><Input label="Loss (m)" type="number" value={leg.loss} onChange={e => updateLeg(leg.id, 'loss', +e.target.value)} /></div>
-                                                <div className="col-span-6 sm:col-span-3">
-                                                    <Select label="Terrain" value={leg.terrain} onChange={e => updateLeg(leg.id, 'terrain', e.target.value as Terrain)}>
-                                                        {terrains.map(t => <option key={t} value={t}>{t}</option>)}
-                                                    </Select>
-                                                </div>
-                                                <div className="col-span-6 sm:col-span-3"><Input label="Stop (min)" type="number" value={leg.stop} onChange={e => updateLeg(leg.id, 'stop', +e.target.value)} /></div>
-                                            </div>
-                                            
-                                            <div className="mt-3 pt-3 border-t border-slate-700/50">
-                                                <Button 
-                                                    onClick={() => setTuningLeg(leg)}
-                                                    variant={leg.terrainSegments && leg.terrainSegments.length > 0 ? 'primary' : 'secondary'}
-                                                    className={`!text-xs !py-1.5 !px-3 ${leg.terrainSegments && leg.terrainSegments.length > 0 ? '!bg-ok !hover:bg-green-600' : ''}`}
-                                                >
-                                                    {leg.terrainSegments && leg.terrainSegments.length > 0 ? '✓ Terrain Tuned' : 'Fine Tune Terrain'}
-                                                </Button>
-                                            </div>
-
-                                            {isSleepPlanned && (
-                                            <div className="mt-4 pt-3 border-t border-slate-700">
-                                                <label className="block text-sm font-medium text-muted">Sleep Strategy (at end of leg)</label>
-                                                <div className="flex items-center gap-4 mt-1">
-                                                    <RangeInput 
-                                                        min="0" max="270" step="15" 
-                                                        value={leg.sleepMinutes || 0} 
-                                                        onChange={e => updateLeg(leg.id, 'sleepMinutes', +e.target.value)} 
-                                                        className="flex-grow"
-                                                    />
-                                                    <div className="w-40 text-right">
-                                                        <span className="font-mono font-semibold text-accent">{formatMinutes(leg.sleepMinutes || 0)}</span>
-                                                        {(leg.sleepMinutes || 0) > 0 && (
-                                                            <span className="block text-xs text-green-400">
-                                                                Fatigue Reset: {(getFatigueReset(leg.sleepMinutes || 0) * 100).toFixed(0)}%
-                                                            </span>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3">
+                                                <Input label="Leg Name (e.g., Hope Pass)" value={leg.name || ''} onChange={e => updateLeg(leg.id, 'name', e.target.value)} />
+                                                <Input label="Distance (km)" type="number" step="0.1" value={leg.dist} onChange={e => updateLeg(leg.id, 'dist', +e.target.value)} />
+                                                <Input label="Gain (m)" type="number" value={leg.gain} onChange={e => updateLeg(leg.id, 'gain', +e.target.value)} />
+                                                <Input label="Loss (m)" type="number" value={leg.loss} onChange={e => updateLeg(leg.id, 'loss', +e.target.value)} />
+                                                <Select label="Terrain" value={leg.terrain} onChange={e => updateLeg(leg.id, 'terrain', e.target.value as Terrain)}>
+                                                    {terrains.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}
+                                                </Select>
+                                                <div>
+                                                    <label className="text-sm font-medium text-muted block mb-1">Stop (mins)</label>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <Input type="number" min="0" value={leg.stop} onChange={e => updateLeg(leg.id, 'stop', +e.target.value)} />
+                                                        {isSleepPlanned && (
+                                                            <div className="relative">
+                                                                <Input type="number" min="0" step="5" value={leg.sleepMinutes || 0} onChange={e => updateLeg(leg.id, 'sleepMinutes', +e.target.value)} />
+                                                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">sleep</span>
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>
                                             </div>
-                                            )}
-                                            
-                                            <div className="mt-3 space-y-4">
+                                            <div className="text-center">
+                                                <Button onClick={() => setTuningLeg(leg)} variant="secondary" className="!text-xs !py-1.5 !px-3">Fine Tune Terrain</Button>
+                                            </div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-700/50">
+                                                <Checkbox leg={leg} field="crewAccess" label="Crew" updateLeg={updateLeg} />
+                                                <Checkbox leg={leg} field="dropBag" label="Drop Bag" updateLeg={updateLeg} />
+                                                <Checkbox leg={leg} field="pacerIn" label="Pacer In" updateLeg={updateLeg} />
+                                                <Checkbox leg={leg} field="pacerOut" label="Pacer Out" updateLeg={updateLeg} />
+                                            </div>
+                                            <div className="space-y-2">
                                                 <div className="space-y-1">
-                                                    <label className="text-xs text-muted">Crew Notes (for full plan PDF)</label>
-                                                    <textarea value={leg.notes || ''} onChange={e => updateLeg(leg.id, 'notes', e.target.value)} className="w-full h-24 bg-input border border-slate-600 rounded-md p-2 text-sm focus:ring-accent focus:border-accent" />
+                                                    <label className="text-xs text-muted">Runner Notes (for runner cards)</label>
+                                                    <textarea value={leg.runnerNotes || ''} onChange={e => updateLeg(leg.id, 'runnerNotes', e.target.value)} className="w-full h-16 bg-input border border-slate-600 rounded-md p-2 text-sm focus:ring-accent focus:border-accent" />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <div className="flex justify-between items-start">
-                                                        <label className="text-xs text-muted pt-1">Personal Notes (for runner cards)</label>
-                                                        <div className="text-xs text-slate-500 text-right">
-                                                            <div>{(leg.runnerNotes || '').length} / 250 chars</div>
-                                                            <div>{(leg.runnerNotes || '').split('\n').length} / 6 lines</div>
-                                                        </div>
-                                                    </div>
-                                                    <textarea 
-                                                        value={leg.runnerNotes || ''} 
-                                                        onChange={e => {
-                                                            let value = e.target.value;
-                                                            const lines = value.split('\n');
-                                                            if (lines.length > 6) {
-                                                                value = lines.slice(0, 6).join('\n');
-                                                            }
-                                                            updateLeg(leg.id, 'runnerNotes', value);
-                                                        }}
-                                                        onKeyDown={e => {
-                                                            if (e.key === 'Enter' && (e.target as HTMLTextAreaElement).value.split('\n').length >= 6) {
-                                                                e.preventDefault();
-                                                            }
-                                                        }}
-                                                        className="w-full h-24 bg-input border border-slate-600 rounded-md p-2 text-sm focus:ring-accent focus:border-accent"
-                                                        maxLength={250}
-                                                    />
+                                                    <label className="text-xs text-muted">Crew Notes (for full plan)</label>
+                                                    <textarea value={leg.notes || ''} onChange={e => updateLeg(leg.id, 'notes', e.target.value)} className="w-full h-24 bg-input border border-slate-600 rounded-md p-2 text-sm focus:ring-accent focus:border-accent" />
                                                 </div>
                                                 {pacerNotesElement}
                                             </div>

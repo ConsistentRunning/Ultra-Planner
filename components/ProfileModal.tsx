@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Profile } from '../types';
 import { presets, fmtTime, getFadeDescriptor, getResilienceDescriptor, getUphillDescriptor, getDownhillBenefitDescriptor, getDownhillPenaltyDescriptor, getVamDescriptor, getHeatDescriptor } from '../utils';
@@ -127,6 +128,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, pro
                         </ProfileInput>
                         <ProfileInput label="Terrain - Sandy" value={profile.tSand} unit="x">
                             <RangeInput min={1.05} max={1.35} step={0.01} value={profile.tSand} onChange={e => handleProfileChange('tSand', +e.target.value)} />
+                        </ProfileInput>
+                         <ProfileInput label="Terrain - Slow Going" value={profile.tSlow} unit="x">
+                            <RangeInput min={1.0} max={1.8} step={0.01} value={profile.tSlow} onChange={e => handleProfileChange('tSlow', +e.target.value)} />
                         </ProfileInput>
                     </SettingsGroup>
 

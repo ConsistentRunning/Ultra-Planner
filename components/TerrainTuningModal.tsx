@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Leg, Terrain, TerrainSegment } from '../types';
 import { Modal } from './ui/Modal';
@@ -11,7 +12,7 @@ interface TerrainTuningModalProps {
     onSave: (legId: string, segments: TerrainSegment[]) => void;
 }
 
-const terrains: Terrain[] = ["road", "smooth", "mixed", "technical", "sandy"];
+const terrains: Terrain[] = ["road", "smooth", "mixed", "technical", "sandy", "slow"];
 
 export const TerrainTuningModal: React.FC<TerrainTuningModalProps> = ({ isOpen, onClose, leg, onSave }) => {
     const [segments, setSegments] = useState<TerrainSegment[]>([]);

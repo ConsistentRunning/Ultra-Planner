@@ -1,6 +1,6 @@
 
 
-export type Terrain = "road" | "smooth" | "mixed" | "technical" | "sandy";
+export type Terrain = "road" | "smooth" | "mixed" | "technical" | "sandy" | "slow";
 
 export interface TerrainSegment {
   id: string;
@@ -40,6 +40,7 @@ export interface Profile {
   tMixed: number;
   tTech: number;
   tSand: number;
+  tSlow: number;
   hike: boolean;
   hikeThr: number;
   vam: number;

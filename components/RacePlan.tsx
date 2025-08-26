@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { LegPlanInfo, ComputationResult, RaceEvent, NightPeriod, ChartDataPoint, Terrain, markerIcons } from '../types';
 import { fmtTime, terrainColors, getElevationAtKm, formatMinutes } from '../utils';
@@ -106,7 +107,7 @@ export const RacePlan: React.FC<RacePlanProps> = (props) => {
                           })).filter(p => p.x1 < p.x2)
                         : [];
                     
-                    const terrainFills: { [key in Terrain]: string } = { road: '#dcfce7', smooth: '#dbeafe', mixed: '#ffedd5', technical: '#fee2e2', sandy: '#fef9c3' };
+                    const terrainFills: { [key in Terrain]: string } = { road: '#dcfce7', smooth: '#dbeafe', mixed: '#ffedd5', technical: '#fee2e2', sandy: '#fef9c3', slow: '#f5f5f4' };
 
                     return (
                         <div key={leg.id} id={`leg-plan-${leg.id}`} className={`mb-8 transition-all duration-1000 ${isFocused ? 'highlight' : ''}`}>

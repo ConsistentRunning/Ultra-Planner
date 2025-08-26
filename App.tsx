@@ -1,12 +1,11 @@
 
-
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Leg, Profile, GpxData, Segment, Terrain, ChartDataPoint, SunTimes, Marker, NightPeriod, RaceEvent, TerrainSegment, LegPlanInfo, ComputationResult, GpxPoint, MarkerIcon, markerIcons, SupportNote } from './types';
 import { Controls } from './components/Controls';
 import { Visuals } from './components/Visuals';
 import { ProfileModal } from './components/ProfileModal';
 import { InfoModal } from './components/InfoModal';
-import { parseGPX as parseGPXUtil, presets, whyRows, clamp, SEGMENT_LENGTH_M, fmtTime, getFatigueReset, getMuscularFatigueReset, getWeatherFactor, getNightFactor, getTerrainFactor, getElevationAtKm, formatMinutes, terrainColors, getElevationAtDistanceM, MENTAL_NOTES, HELPER_NOTE_MODULES, HelperModuleKey, getRandomNote, replaceRandomNote, CREW_NOTE_MODULES, PACER_NOTE_MODULES, getRandomSupportNote } from './utils';
+import { parseGPX as parseGPXUtil, presets, whyRows, clamp, SEGMENT_LENGTH_M, fmtTime, getFatigueReset, getMuscularFatigueReset, getWeatherFactor, getNightFactor, getTerrainFactor, getElevationAtKm, formatMinutes, terrainColors, getElevationAtDistanceM, MENTAL_NOTES, HELPER_NOTE_MODULES, HelperModuleKey, getRandomNote, replaceRandomNote, COMPREHENSIVE_CREW_NOTES, PACER_NOTE_MODULES, getRandomSupportNote, GENERAL_PACER_NOTES } from './utils';
 import { Button } from './components/ui/Button';
 import { Card } from './components/ui/Card';
 import { LegsEditor } from './components/LegsEditor';
@@ -17,9 +16,9 @@ import { AidStationTemplateModal } from './components/AidStationTemplateModal';
 import jsPDF from 'jspdf';
 import SunCalc from 'suncalc';
 import { RunnerCardsModal } from './components/RunnerCardsModal';
-import { Modal } from './components/ui/Modal';
 import { MentalStrategyModal } from './components/MentalStrategyModal';
 import { TimeBreakdownExplanationModal } from './components/TimeBreakdownExplanationModal';
+import { WelcomeModal } from './components/AppGuideModal';
 
 
 const Logo: React.FC = () => (
@@ -41,112 +40,14 @@ const Logo: React.FC = () => (
     </svg>
 );
 
-const WelcomeModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen, onClose }) => {
-    const [view, setView] = useState<'simple' | 'detailed'>('simple');
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Welcome to the Ultra Planner!" size="5xl">
-            <div className="space-y-4">
-                <div className="flex border-b border-slate-700">
-                    <button onClick={() => setView('simple')} className={`px-4 py-2 text-sm font-medium border-b-2 ${view === 'simple' ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-text'}`}>
-                        Simple Guide
-                    </button>
-                    <button onClick={() => setView('detailed')} className={`px-4 py-2 text-sm font-medium border-b-2 ${view === 'detailed' ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-text'}`}>
-                        The Detailed Science
-                    </button>
-                </div>
-
-                {view === 'simple' ? (
-                    <div className="prose prose-invert max-w-none prose-p:text-slate-300 prose-headings:text-text prose-strong:text-accent2">
-                        <h3>Create a realistic race plan in 5 simple steps:</h3>
-                        <ol>
-                            <li>
-                                <strong>Enter Race Basics</strong>:
-                                Choose 'Predict Time' or 'Plan for Goal'. Your 'Flat time' is the most important input—use a recent marathon or 50k time on a flat course. Fill in the race name and start date.
-                            </li>
-                            <li>
-                                <strong>Define the Course</strong>:
-                                For the best results, click "GPX Import" and load the official race file. Alternatively, use "Simple" mode with total gain/loss, or switch to "By Legs" mode to break the race down by aid stations for detailed planning.
-                            </li>
-                            <li>
-                                <strong>Tune Your Runner Profile</strong>:
-                                Click "Runner profile" and start with a preset that sounds like you. Fine-tune key settings like your "Heat Acclimation" and "Muscular Resilience" (how well your quads handle downhills). The defaults are a great starting point.
-                            </li>
-                            <li>
-                                <strong>Analyze Your Plan</strong>:
-                                The "Pace & Elevation Chart" shows your predicted pace throughout the race. The "Finish Time Breakdown" shows exactly where your time is going (hills, fatigue, stops, etc.). If you're using "By Legs" mode, a detailed plan appears at the bottom.
-                            </li>
-                            <li>
-                                <strong>Print & Go!</strong>:
-                                In "By Legs" mode, you can print a full "Race Plan PDF" for your crew, or handy "Runner Cards" and "Pacer Cards" to carry with you during the race.
-                            </li>
-                        </ol>
-                        <p>That's it! Experiment with the settings to see how different strategies (like hiking more) affect your finish time.</p>
-                    </div>
-                ) : (
-                    <div className="prose prose-invert max-w-none prose-p:text-slate-300 prose-headings:text-text prose-strong:text-accent2 prose-code:text-amber-300 prose-code:before:content-[''] prose-code:after:content-[''] prose-em:text-slate-400">
-                        <h3>Under the Hood: The Simulation Engine</h3>
-                        <p>This planner models your race by breaking the course into 25-meter segments and calculating your pace for each one based on a sophisticated set of rules.</p>
-                        
-                        <h4>1. The Core Calculation: Grade Adjusted Pace (GAP)</h4>
-                        <p>It starts with your <strong>Flat Pace</strong> and adjusts it for each segment based on Grade, Terrain, and Environment. For steep climbs, it can switch to a VAM-based (Vertical Ascent Meters/hour) hiking model, which is much more efficient.</p>
-
-                        <h4>2. The Secret Sauce: The Dual-Component Fatigue Model</h4>
-                        <p>Instead of a single "fatigue" score, it tracks two separate types that interact realistically:</p>
-                        <ul>
-                            <li>
-                                <strong>Metabolic Fatigue (The "Engine")</strong>: This is your cardiovascular and glycogen depletion—"running out of gas." The model tracks this using "Effort-Seconds." The <code>Hiking Economy Bonus</code> reduces this effort, saving your engine for later.
-                            </li>
-                            <li>
-                                <strong>Muscular Damage (The "Chassis")</strong>: This represents physical muscle breakdown. This score is asymmetrical: steep downhill running is by far the most damaging activity. Your personal <code>Muscular Resilience</code> setting determines your sensitivity to this damage.
-                            </li>
-                        </ul>
-
-                        <h4>3. The Interaction: How Fatigue Spirals</h4>
-                        <p>Here’s the key insight: <strong>Muscular damage accelerates metabolic fatigue.</strong> The model uses this formula:</p>
-                        <p><code>Effective Fatigue % = Base Metabolic Fade % * (1 + Muscular Damage Score * Muscular Resilience)</code></p>
-                        <p>This means as your legs get trashed from downhills, your pace slows down at an ever-increasing rate, even on flats. This accurately models why preserving your legs by hiking uphills early allows you to run faster and feel stronger in the final third of the race.</p>
-                        
-                        <h4>4. Recovery and Psychology</h4>
-                        <ul>
-                            <li><strong>Sleep Recovery</strong>: A sleep stop provides a non-linear "reset" to your fatigue scores. It's highly effective at clearing Metabolic Fatigue but much less so at repairing real Muscular Damage.</li>
-                            <li><strong>Finish Line Pull</strong>: A small factor is applied in the final 10% of the race, slightly reducing fatigue effects to model a final "kick."</li>
-                        </ul>
-
-                        <h4 className="pt-4 border-t border-slate-700">5. Scientific Foundations & Further Reading</h4>
-                        <p>This planner is a pragmatic simulation, not a peer-reviewed academic model. However, its core logic is grounded in established principles of exercise physiology. Here’s a brief overview of the science that informs the calculations:</p>
-                        <ul>
-                            <li>
-                                <strong>Grade-Adjusted Pace (GAP):</strong> The pace adjustments for hills are based on extensive research into the metabolic cost of running. The energy required to run uphill is well-documented, as is the complex relationship of braking and propulsive forces on downhills. Our model mirrors concepts seen in research by <em>Minetti et al.</em> and practical applications like Strava's GAP.
-                            </li>
-                            <li>
-                                <strong>Metabolic Fatigue (The "Engine"):</strong> The "Effort-Seconds" concept is an abstraction similar to scientific metrics like <em>TRIMP (Training Impulse)</em> or <em>EPOC (Excess Post-exercise Oxygen Consumption)</em>. It serves as a proxy for cardiovascular strain and the depletion of key energy sources like muscle glycogen, which are primary factors in endurance performance.
-                            </li>
-                            <li>
-                                <strong>Muscular Damage (The "Chassis"):</strong> The model heavily penalizes downhill running because of the well-understood phenomenon of <em>eccentric muscle contractions</em>. These contractions, where the muscle lengthens under load (acting as a brake), are the primary cause of the micro-tears that lead to Delayed Onset Muscle Soreness (DOMS) and significant, lasting muscle damage. This is often the true limiter in long mountain ultras.
-                            </li>
-                            <li>
-                                <strong>The Fatigue Interaction:</strong> The key insight—that muscular damage accelerates metabolic fatigue—is based on the concept of <em>running economy</em>. As your muscle fibers become damaged and your form breaks down, the metabolic cost of running at any given pace increases. Your "engine" has to work harder to produce the same speed, leading to a faster depletion of energy and a necessary reduction in pace.
-                            </li>
-                        </ul>
-                    </div>
-                )}
-                 <div className="flex justify-end pt-4 border-t border-slate-700">
-                    <Button onClick={onClose} variant="primary">Got it, let's start planning!</Button>
-                </div>
-            </div>
-        </Modal>
-    );
-};
-
-
 const App: React.FC = () => {
-    const today = new Date();
-    const formattedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const formattedDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
     
     const [raceName, setRaceName] = useState("My Ultra Race");
-    const [flatTimeStr, setFlatTimeStr] = useState("4:00:00");
-    const [distanceKm, setDistanceKm] = useState(50);
+    const [flatTimeStr, setFlatTimeStr] = useState("24:00:00");
+    const [distanceKm, setDistanceKm] = useState(161);
     const [startDate, setStartDate] = useState(formattedDate);
     const [startTime, setStartTime] = useState("06:00");
     const [nightFrom, setNightFrom] = useState("19:00");
@@ -167,11 +68,11 @@ const App: React.FC = () => {
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isWhyModalOpen, setIsWhyModalOpen] = useState(false);
     const [isLegsInfoModalOpen, setIsLegsInfoModalOpen] = useState(false);
+    const [isFromDistInfoModalOpen, setIsFromDistInfoModalOpen] = useState(false);
     const [isAutoNotesInfoModalOpen, setIsAutoNotesInfoModalOpen] = useState(false);
     const [isSleepInfoModalOpen, setIsSleepInfoModalOpen] = useState(false);
     const [isNightInfoModalOpen, setIsNightInfoModalOpen] = useState(false);
     const [isHikeInfoModalOpen, setIsHikeInfoModalOpen] = useState(false);
-    const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
     const [isRunnerCardsModalOpen, setIsRunnerCardsModalOpen] = useState(false);
     const [isMentalStrategyModalOpen, setIsMentalStrategyModalOpen] = useState(false);
     const [isRiegelInfoModalOpen, setIsRiegelInfoModalOpen] = useState(false);
@@ -181,8 +82,8 @@ const App: React.FC = () => {
     const [waterPerHour, setWaterPerHour] = useState(500);
     const [modelType, setModelType] = useState<'predict' | 'goal'>('predict');
     const [goalTimeStr, setGoalTimeStr] = useState("13:30:00");
-    const [referenceDistance, setReferenceDistance] = useState<'race' | '10k' | 'half' | 'marathon' | '50k'>('marathon');
-    const [referenceTimeStr, setReferenceTimeStr] = useState("4:00:00");
+    const [referenceDistance, setReferenceDistance] = useState<'race' | '10k' | 'half' | 'marathon' | '50k'>('race');
+    const [referenceTimeStr, setReferenceTimeStr] = useState("24:00:00");
     const [isSleepPlanned, setIsSleepPlanned] = useState(false);
     const [markers, setMarkers] = useState<Marker[]>([]);
     const [tuningLeg, setTuningLeg] = useState<Leg | null>(null);
@@ -197,6 +98,15 @@ const App: React.FC = () => {
     const [isGreyscale, setIsGreyscale] = useState(false);
     const [autoFilledTargets, setAutoFilledTargets] = useState<{ runner: boolean; crew: boolean; pacer: boolean; }>({ runner: false, crew: false, pacer: false });
     const prevLegsRef = useRef<Leg[]>(legs);
+    const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+
+    useEffect(() => {
+        const hasVisited = localStorage.getItem('hasVisitedUltraPlanner');
+        if (!hasVisited) {
+            setIsWelcomeModalOpen(true);
+            localStorage.setItem('hasVisitedUltraPlanner', 'true');
+        }
+    }, []);
 
     const isTimeNight = (time: Date, nightFrom: string, nightTo: string): boolean => {
         if (isNaN(time.getTime())) return false;
@@ -207,18 +117,6 @@ const App: React.FC = () => {
         const secsIntoDay = time.getHours() * 3600 + time.getMinutes() * 60 + time.getSeconds();
         return (nightStartSecs > nightEndSecs && (secsIntoDay >= nightStartSecs || secsIntoDay < nightEndSecs)) || 
                 (nightStartSecs < nightEndSecs && secsIntoDay >= nightStartSecs && secsIntoDay < nightEndSecs);
-    };
-
-    useEffect(() => {
-        const welcomeShown = localStorage.getItem('ultraPlannerWelcomeShown');
-        if (!welcomeShown) {
-            setIsWelcomeModalOpen(true);
-        }
-    }, []);
-
-    const handleCloseWelcomeModal = () => {
-        setIsWelcomeModalOpen(false);
-        localStorage.setItem('ultraPlannerWelcomeShown', 'true');
     };
 
     useEffect(() => {
@@ -444,6 +342,14 @@ const App: React.FC = () => {
 
                     // 2. Calculate Metabolic Effort (with Hiking Economy Bonus)
                     let effortFactor = paceSpk / basePaceSpk;
+
+                    if (segmentTerrain === 'slow') {
+                        const terrainSlowFactor = getTerrainFactor(segmentTerrain, profile);
+                        if (terrainSlowFactor > 0) {
+                            effortFactor /= terrainSlowFactor;
+                        }
+                    }
+
                     if (isHiking) {
                         const hikingEconomyFactor = profile.hikingEconomyFactor ?? 0.085;
                         effortFactor *= (1 - hikingEconomyFactor);
@@ -600,701 +506,631 @@ const App: React.FC = () => {
     }, [isLegMode, computation, effectiveLegs, startDate, startTime, carbsPerHour, waterPerHour, markers]);
     
     const fillLegsFromGpx = useCallback(() => {
-        if (!gpxData) return;
+        if (!gpxData || legs.length === 0) return;
+    
         let cumulativeDistM = 0;
-        let lastEle = gpxData.pts[0].ele;
+        let lastPointIndex = 0;
+
         const updatedLegs = legs.map(leg => {
-            const legStartM = cumulativeDistM;
-            const legEndM = cumulativeDistM + leg.dist * 1000;
-            let gain = 0, loss = 0;
+            const legStartDistM = cumulativeDistM;
+            const legEndDistM = cumulativeDistM + (leg.dist * 1000);
+            let legGain = 0;
+            let legLoss = 0;
+
+            if (gpxData.pts.length < 2) return { ...leg, gain: 0, loss: 0 };
             
-            const relevantPoints = gpxData.pts.filter(p => p.cum >= legStartM && p.cum <= legEndM);
-            if (relevantPoints.length > 0) {
-                 lastEle = getElevationAtDistanceM(legStartM, gpxData.pts);
-                 relevantPoints.forEach(pt => {
-                    const eleDiff = pt.ele - lastEle;
-                    if (eleDiff > 0) gain += eleDiff;
-                    else loss -= eleDiff;
-                    lastEle = pt.ele;
-                });
+            let lastEle = getElevationAtDistanceM(legStartDistM, gpxData.pts);
+            
+            let i = lastPointIndex;
+            while(i < gpxData.pts.length && gpxData.pts[i].cum < legEndDistM) {
+                if (gpxData.pts[i].cum > legStartDistM) {
+                    const eleDiff = gpxData.pts[i].ele - lastEle;
+                    if (eleDiff > 0) {
+                        legGain += eleDiff;
+                    } else {
+                        legLoss -= eleDiff;
+                    }
+                    lastEle = gpxData.pts[i].ele;
+                }
+                i++;
             }
             
-            cumulativeDistM = legEndM;
-            return { ...leg, gain: Math.round(gain), loss: Math.round(loss) };
+            const endEle = getElevationAtDistanceM(legEndDistM, gpxData.pts);
+            const finalEleDiff = endEle - lastEle;
+             if (finalEleDiff > 0) {
+                legGain += finalEleDiff;
+            } else {
+                legLoss -= finalEleDiff;
+            }
+
+            lastPointIndex = i > 0 ? i - 1 : 0;
+            
+            cumulativeDistM = legEndDistM;
+    
+            return { ...leg, gain: Math.round(legGain), loss: Math.round(legLoss) };
         });
+    
         setLegs(updatedLegs);
     }, [gpxData, legs]);
 
-    const nightPeriods: NightPeriod[] = useMemo(() => {
-        if (!computation || !computation.chartData.length) return [];
-        
-        const raceStartMillis = new Date(`${startDate}T${startTime}`).getTime();
-        if (isNaN(raceStartMillis)) return [];
-
-        const periods = [];
-        let inNight = false;
-        let startKm = 0;
-
-        const timePartsStart = nightFrom.split(':').map(Number);
-        const nightStartSecs = timePartsStart[0] * 3600 + timePartsStart[1] * 60;
-        const timePartsEnd = nightTo.split(':').map(Number);
-        const nightEndSecs = timePartsEnd[0] * 3600 + timePartsEnd[1] * 60;
-
-        for (const pt of computation.chartData) {
-            const realTime = new Date(raceStartMillis + (pt.cumulativeTime || 0) * 1000);
-            const secsIntoDay = realTime.getHours() * 3600 + realTime.getMinutes() * 60 + realTime.getSeconds();
-            const isCurrentlyNight = (nightStartSecs > nightEndSecs && (secsIntoDay >= nightStartSecs || secsIntoDay < nightEndSecs)) || (nightStartSecs < nightEndSecs && secsIntoDay >= nightStartSecs && secsIntoDay < nightEndSecs);
-
-            if (isCurrentlyNight && !inNight) {
-                inNight = true;
-                startKm = pt.km;
-            } else if (!isCurrentlyNight && inNight) {
-                inNight = false;
-                periods.push({ x1: startKm, x2: pt.km });
-            }
-        }
-
-        if (inNight) {
-            periods.push({ x1: startKm, x2: computation.chartData[computation.chartData.length - 1].km });
-        }
-
-        return periods;
-    }, [computation, startDate, startTime, nightFrom, nightTo]);
-
-    const raceEvents: RaceEvent[] = useMemo(() => {
-        if (!sunTimes.sunrise || !sunTimes.sunset || !computation || !computation.chartData.length) return [];
-
-        const raceStartMillis = new Date(`${startDate}T${startTime}`).getTime();
-        const events: RaceEvent[] = [];
-        let sunriseFound = false, sunsetFound = false;
-
-        const sunriseTime = sunTimes.sunrise.getTime();
-        const sunsetTime = sunTimes.sunset.getTime();
-        
-        for (const pt of computation.chartData) {
-            const pointTime = raceStartMillis + (pt.cumulativeTime || 0) * 1000;
-            if (!sunriseFound && pointTime >= sunriseTime) {
-                events.push({ km: pt.km, type: 'sunrise' });
-                sunriseFound = true;
-            }
-            if (!sunsetFound && pointTime >= sunsetTime) {
-                events.push({ km: pt.km, type: 'sunset' });
-                sunsetFound = true;
-            }
-            if (sunriseFound && sunsetFound) break;
-        }
-
-        return events;
-    }, [sunTimes, computation, startDate, startTime]);
-
-    const handleFocusLeg = (legId: string) => {
-        setFocusedLegId(legId);
-        const element = document.getElementById(`leg-plan-${legId}`);
-        element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => setFocusedLegId(null), 1500);
-    };
-
-    const handleTuningSave = (legId: string, segments: TerrainSegment[]) => {
+    const handleSaveTuning = (legId: string, segments: TerrainSegment[]) => {
         setLegs(currentLegs => currentLegs.map(l => l.id === legId ? { ...l, terrainSegments: segments } : l));
         setTuningLeg(null);
     };
+
+    const handleSaveAidStationTemplates = (checklist: string[], feedback: string[]) => {
+        setChecklistItems(checklist);
+        setFeedbackItems(feedback);
+    };
+
+    const focusOnLeg = (legId: string) => {
+        setFocusedLegId(legId);
+        const element = document.getElementById(`leg-plan-${legId}`);
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => setFocusedLegId(null), 2000);
+        }
+    };
     
-    const handlePrintPlan = () => {
-        if (!legPlan || !computation) return;
+    const handleAutoFillNotes = (targets: { runner: boolean; crew: boolean; pacer: boolean; }) => {
+        if (!legPlan) return;
+        setAutoFilledTargets(targets);
 
-        const GREYSCALE_PALETTE = {
-            BG: '#FFFFFF', BORDER: '#AAAAAA', TEXT: '#000000', MUTED: '#555555', ACCENT: '#333333', ACCENT2: '#000000', CHIP_BG: '#EEEEEE',
-            NIGHT_FILL: '#DDDDDD', MARKER_BG: '#999999', MARKER_ICON: '#FFFFFF', SUN_BG: '#999999', MOON_BG: '#555555',
-            TERRAIN_STROKE: { road: '#999', smooth: '#777', mixed: '#555', technical: '#333', sandy: '#bbb' },
-            TERRAIN_FILL: { road: '#f0f0f0', smooth: '#e0e0e0', mixed: '#d0d0d0', technical: '#c0c0c0', sandy: '#fafafa' }
-        };
+        const totalDist = legPlan[legPlan.length - 1].cumulativeDist;
+        let isPacerActive = false;
 
-        const COLOR_PALETTE = {
-            BG: '#f8fafc', BORDER: '#cbd5e1', TEXT: '#1e293b', MUTED: '#64748b', ACCENT: '#2563eb', ACCENT2: '#10b981', CHIP_BG: '#e2e8f0',
-            NIGHT_FILL: '#f3e8ff', MARKER_BG: '#f59e0b', MARKER_ICON: '#000000', SUN_BG: '#fcd34d', MOON_BG: '#94a3b8',
-            TERRAIN_STROKE: terrainColors,
-            TERRAIN_FILL: { road: '#dcfce7', smooth: '#dbeafe', mixed: '#ffedd5', technical: '#fee2e2', sandy: '#fef9c3' }
-        };
+        const updatedLegs = legPlan.map((info, legIndex) => {
+            const leg = { ...info.leg };
+            
+            if (leg.pacerIn) isPacerActive = true;
+            const isPacerOnThisLeg = isPacerActive;
+            
+            const isNightLeg = info.segments.some(seg => {
+                const time = new Date(new Date(`${startDate}T${startTime}`).getTime() + (seg.cumulativeTime || 0) * 1000);
+                return isTimeNight(time, nightFrom, nightTo);
+            });
+            
+            const legArrivalTime = info.arrivalTime;
+            const isApproachingNight = sunTimes.sunset && !isNightLeg && (sunTimes.sunset.getTime() - legArrivalTime.getTime()) < 3 * 3600 * 1000;
 
-        const PALETTE = isGreyscale ? GREYSCALE_PALETTE : COLOR_PALETTE;
-        const pdfIconMap: { [key in MarkerIcon]: string } = { 'water': 'W', 'creek': '~', 'hut': 'H', 'first-aid': '+', 'food': 'F', 'toilet': 'T', 'general': 'i', 'photo': 'P' };
 
-
-        const doc = new jsPDF({ unit: 'pt' });
-        const pageW = doc.internal.pageSize.getWidth();
-        const margin = 30;
-        const boxW = pageW - margin * 2;
-        let currentY = margin;
-
-        const addHeader = (pageNumber: number) => {
-            doc.setFontSize(10);
-            doc.setTextColor(PALETTE.MUTED);
-            doc.text(`${raceName} - Race Plan`, margin, 20);
-            doc.text(`Page ${pageNumber}`, pageW - margin, 20, { align: 'right' });
-        };
-        
-        let pageNumber = 1;
-        addHeader(pageNumber);
-
-        doc.setFontSize(20); doc.setFont('helvetica', 'bold');
-        doc.setTextColor(PALETTE.TEXT);
-        doc.text(raceName, pageW / 2, currentY, { align: 'center' });
-        currentY += 20;
-
-        doc.setFontSize(14); doc.setFont('helvetica', 'normal');
-        doc.setTextColor(PALETTE.ACCENT2);
-        doc.text(`Predicted Finish: ${fmtTime(computation.finalTime)}`, pageW / 2, currentY, { align: 'center' });
-        currentY += 30;
-        
-        const addPageIfNeeded = (requiredHeight: number) => {
-            if (currentY + requiredHeight > doc.internal.pageSize.getHeight() - margin) {
-                doc.addPage();
-                pageNumber++;
-                addHeader(pageNumber);
-                currentY = margin;
-                return true;
-            }
-            return false;
-        };
-
-        // Start
-        const raceStartDate = new Date(`${startDate}T${startTime}`);
-        doc.setFontSize(12); doc.setFont('helvetica', 'bold');
-        doc.setTextColor(PALETTE.TEXT);
-        doc.text('Start', margin, currentY);
-        doc.setFontSize(10); doc.setFont('helvetica', 'normal');
-        doc.text(`${raceStartDate.toLocaleDateString([], { weekday: 'short' })} ${raceStartDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, pageW - margin, currentY, { align: 'right' });
-        currentY += 25;
-
-        for (const [i, info] of legPlan.entries()) {
-            const { leg, arrivalTime, departureTime, totalStopTimeMins, legRunningTime, cumulativeDist, segments, markers } = info;
-            const isFinish = i === legPlan.length - 1;
-            const startName = i === 0 ? 'Start' : (legPlan[i - 1].leg.name || `Aid ${i}`);
-            const endName = isFinish ? 'Finish' : (leg.name || `Aid ${i + 1}`);
-
-            // Estimate block height to check for page break
-            let blockHeight = 150; // Base height for leg info + chart
-            if (leg.notes) blockHeight += 30;
-            if (showChecklist) blockHeight += checklistItems.length * 15;
-            if (showFeedback) blockHeight += feedbackItems.length * 20;
-            addPageIfNeeded(blockHeight);
-
-            doc.setDrawColor(PALETTE.BORDER);
-            doc.setLineWidth(1);
-            doc.line(margin, currentY, pageW - margin, currentY);
-            currentY += 15;
-
-            doc.setFontSize(12); doc.setFont('helvetica', 'bold');
-            doc.setTextColor(PALETTE.TEXT);
-            doc.text(`Leg ${i + 1}: ${startName} to ${endName}`, margin, currentY);
-            doc.setFontSize(11);
-            doc.text(fmtTime(legRunningTime), pageW - margin, currentY, { align: 'right' });
-            currentY += 15;
-
-            doc.setFontSize(9); doc.setFont('helvetica', 'normal');
-            doc.setTextColor(PALETTE.MUTED);
-            const legDetails = `${leg.dist.toFixed(1)} km · +${leg.gain}/-${leg.loss}m · Avg Pace: ${Math.floor(info.adjustedPace / 60)}:${(Math.round(info.adjustedPace % 60)).toString().padStart(2, '0')} /km`;
-            doc.text(legDetails, margin, currentY);
-            currentY += 12;
-
-            if (info.terrainBreakdown) {
-                doc.setFontSize(8);
-                const terrainDetails = `Terrain: ${info.terrainBreakdown}`;
-                const terrainLines = doc.splitTextToSize(terrainDetails, boxW);
-                doc.text(terrainLines, margin, currentY);
-                currentY += doc.getTextDimensions(terrainLines).h + 8;
-            } else {
-                 currentY += 8;
-            }
-
-            // Chart
-            const chartBox = { x: margin, y: currentY, w: boxW, h: 70 };
-            if (segments && segments.length > 1) {
-                const eleValues = segments.map(s => s.elevation);
-                const minEle = Math.min(...eleValues);
-                const maxEle = Math.max(...eleValues);
-                const eleRange = Math.max(1, maxEle - minEle);
-                const yPadding = eleRange * 0.1;
-
-                const scaleX = (km: number) => chartBox.x + ((km - info.startKm) / leg.dist) * chartBox.w;
-                const scaleY = (ele: number) => chartBox.y + chartBox.h - ((ele - (minEle - yPadding)) / (eleRange + yPadding * 2)) * chartBox.h;
-                
-                const nightSegs = nightPeriods?.map(p => ({ x1: Math.max(p.x1, info.startKm), x2: Math.min(p.x2, info.endKm) })).filter(p => p.x1 < p.x2) || [];
-                doc.setFillColor(PALETTE.NIGHT_FILL);
-                nightSegs.forEach(seg => {
-                    doc.rect(scaleX(seg.x1), chartBox.y, scaleX(seg.x2) - scaleX(seg.x1), chartBox.h, 'F');
-                });
-                
-                 for (let segIdx = 0; segIdx < segments.length - 1; segIdx++) {
-                    const p1 = segments[segIdx];
-                    const p2 = segments[segIdx + 1];
-                    doc.setFillColor(PALETTE.TERRAIN_FILL[p1.terrain]);
-                    doc.setDrawColor(PALETTE.TERRAIN_STROKE[p1.terrain]);
-                    doc.triangle(scaleX(p1.km), scaleY(p1.elevation), scaleX(p2.km), scaleY(p2.elevation), scaleX(p1.km), chartBox.y + chartBox.h, 'F');
-                    doc.triangle(scaleX(p2.km), scaleY(p2.elevation), scaleX(p1.km), chartBox.y + chartBox.h, scaleX(p2.km), chartBox.y + chartBox.h, 'F');
-                    doc.setLineWidth(1);
-                    doc.line(scaleX(p1.km), scaleY(p1.elevation), scaleX(p2.km), scaleY(p2.elevation));
+            // Runner Notes
+            if (targets.runner) {
+                let weightedNotePool: { note: string; weight: number }[] = [];
+    
+                const context = {
+                    distPercentageStart: (info.startKm / totalDist) * 100,
+                    isNightLeg,
+                    isHotLeg: tempC > 22 && legArrivalTime.getHours() >= 11 && legArrivalTime.getHours() <= 16,
+                    segments: info.segments,
+                    leg: info.leg,
+                    isAfterSleep: legIndex > 0 && (legPlan[legIndex - 1].leg.sleepMinutes ?? 0) > 0,
+                    isApproachingNight,
+                    arrivalTime: info.arrivalTime
+                };
+    
+                if (selectedNoteModules.includes('pacingPro')) {
+                    if (context.distPercentageStart <= 25) {
+                        weightedNotePool.push({ note: "This should feel 'too easy'.", weight: 3 });
+                        weightedNotePool.push({ note: "Bank patience, not time.", weight: 3 });
+                    }
+                    if (context.distPercentageStart <= 30 && context.segments.some(s => s.grade < -8)) {
+                        weightedNotePool.push({ note: "Easy on the descents. Save the quads.", weight: 3 });
+                    }
+                    if (context.segments.some(s => s.grade > 10)) {
+                        weightedNotePool.push({ note: "Heart rate is your governor. Keep it in the all-day zone.", weight: 2 });
+                    }
+                    if (context.isHotLeg) {
+                        weightedNotePool.push({ note: "The heat will dictate the pace. Listen to it.", weight: 2 });
+                    }
+                }
+    
+                if (selectedNoteModules.includes('fuelingGuardian')) {
+                    if (context.distPercentageStart > 25 && context.distPercentageStart <= 75) {
+                        weightedNotePool.push({ note: "250 calories per hour. Are you on schedule?", weight: 2 });
+                    }
+                    if (context.isNightLeg) {
+                        weightedNotePool.push({ note: "Your brain needs glucose to make good decisions. Feed it.", weight: 3 });
+                        weightedNotePool.push({ note: "Eat before you're hungry, drink before you're thirsty.", weight: 3 });
+                    }
+                    if (context.isHotLeg) {
+                        weightedNotePool.push({ note: "Salt is not optional. Take an electrolyte cap now.", weight: 3 });
+                    }
+                    if (context.isAfterSleep) {
+                        weightedNotePool.push({ note: "Wake up and fuel up. Restock the engine.", weight: 3 });
+                    }
+                }
+    
+                if (selectedNoteModules.includes('painResilienceCoach')) {
+                    if (context.distPercentageStart > 60 && context.distPercentageStart <= 90) {
+                         weightedNotePool.push({ note: "This is what you came for.", weight: 3 });
+                         weightedNotePool.push({ note: "This is hard, and you do hard things.", weight: 2 });
+                    }
+                    if (context.isNightLeg && context.arrivalTime.getHours() >= 2 && context.arrivalTime.getHours() < 5) {
+                        weightedNotePool.push({ note: "It never always gets worse.", weight: 3 });
+                    }
+                    if (context.distPercentageStart > 50 && context.segments.some(s => s.grade > 10)) {
+                         weightedNotePool.push({ note: "Reframe it: This pain is progress.", weight: 2 });
+                    }
+                }
+    
+                if (selectedNoteModules.includes('trailTechnician')) {
+                    if (context.segments.some(s => s.grade > 15)) {
+                        weightedNotePool.push({ note: "Hike with purpose. Hands on knees, drive up.", weight: 2 });
+                    }
+                    if (context.segments.some(s => s.grade < -10)) {
+                        weightedNotePool.push({ note: "Quick feet, light steps.", weight: 3 });
+                        weightedNotePool.push({ note: "Scan ahead, not at your feet. Let your brain map the path.", weight: 2 });
+                    }
+                    const isTechnical = context.leg.terrain === 'technical' || (context.leg.terrainSegments && context.leg.terrainSegments.some(ts => ts.terrain === 'technical'));
+                    if (isTechnical) {
+                         weightedNotePool.push({ note: "Flow, don't fight the trail.", weight: 2 });
+                         if (context.isNightLeg) {
+                             weightedNotePool.push({ note: "Lift your feet. Don't shuffle.", weight: 3 });
+                         }
+                    }
                 }
                 
-                doc.setDrawColor(PALETTE.BORDER);
-                doc.rect(chartBox.x, chartBox.y, chartBox.w, chartBox.h);
-                
-                // X-axis ticks and labels
-                const tickY = chartBox.y + chartBox.h;
-                doc.setFontSize(8);
-                doc.setTextColor(PALETTE.MUTED);
-
-                const legDist = info.endKm - info.startKm;
-                const tickIntervals = [50, 20, 10, 5, 2, 1, 0.5];
-                let interval = tickIntervals[0];
-                for (const i of tickIntervals) {
-                    if (legDist / i >= 3 && legDist / i <= 8) { // Aim for 3-8 ticks
-                        interval = i;
-                        break;
-                    }
-                     if (legDist / i < 3) {
-                        interval = i;
+                if (selectedNoteModules.includes('focusMaster')) {
+                     if (context.distPercentageStart > 15 && context.distPercentageStart <= 60) {
+                         weightedNotePool.push({ note: "Run the mile you're in.", weight: 2 });
+                     }
+                     if (context.isNightLeg) {
+                         weightedNotePool.push({ note: "Plan your next aid station in detail.", weight: 2 });
+                     }
+                     if ((context.leg.sleepMinutes ?? 0) > 0) {
+                         weightedNotePool.push({ note: "Just make it to that next tree/rock/bend.", weight: 3 });
                      }
                 }
                 
-                const startTick = Math.ceil(info.startKm / interval) * interval;
-
-                // Draw start and end labels always
-                doc.text(info.startKm.toFixed(1), chartBox.x, tickY + 10, { align: 'left' });
-                doc.text(info.endKm.toFixed(1), chartBox.x + chartBox.w, tickY + 10, { align: 'right' });
-                
-                for (let tickKm = startTick; tickKm < info.endKm; tickKm += interval) {
-                    if (tickKm > info.startKm) {
-                        const tickX = scaleX(tickKm);
-                        doc.text(String(tickKm.toFixed(tickKm % 1 === 0 ? 0 : 1)), tickX, tickY + 10, { align: 'center' });
+                if (selectedNoteModules.includes('aidStationNinja')) {
+                    weightedNotePool.push({ note: "What are your 3 must-do tasks here?", weight: 2 });
+                    if (context.isHotLeg) {
+                         weightedNotePool.push({ note: "Hot day? Ice in everything: hat, bandana, sleeves.", weight: 3 });
+                    }
+                    if (context.isApproachingNight) {
+                         weightedNotePool.push({ note: "Night coming? Check your headlamp and grab your backup NOW.", weight: 3 });
                     }
                 }
-
-                markers.forEach(marker => {
-                    const mx = scaleX(marker.km);
-                    const my = scaleY(getElevationAtKm(marker.km, segments));
-                    doc.setFillColor(PALETTE.MARKER_BG);
-                    doc.circle(mx, my, 5, 'F');
-                    doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(PALETTE.MARKER_ICON);
-                    doc.text(pdfIconMap[marker.icon] || '?', mx, my + 3, { align: 'center' });
-                });
-            }
-            currentY += chartBox.h + 25;
-
-            // Aid Station Card
-            const cardY = currentY;
-            doc.setFillColor(PALETTE.BG);
-            doc.setDrawColor(PALETTE.BORDER);
-            let cardHeight = 30;
-            if (!isFinish) {
-                 if (leg.notes) cardHeight += doc.getTextDimensions(leg.notes, { maxWidth: boxW * 0.5 - 10 }).h + 20;
-                 if (showChecklist) cardHeight += checklistItems.length * 12 + 20;
-                 if (showFeedback) cardHeight += feedbackItems.length * 20 + 20;
-                 cardHeight = Math.max(80, cardHeight);
-            }
-            doc.roundedRect(margin, currentY, boxW, cardHeight, 5, 5, 'FD');
-            currentY += 15;
-
-            doc.setFontSize(11); doc.setFont('helvetica', 'bold');
-            doc.setTextColor(PALETTE.TEXT);
-            doc.text(isFinish ? 'Finish Line' : `At ${endName}`, margin + 10, currentY);
-            doc.setFontSize(10); doc.setFont('helvetica', 'normal');
-            doc.text(`Arrival: ${arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, pageW - margin - 10, currentY, { align: 'right' });
-            currentY += 12;
-            doc.setTextColor(PALETTE.MUTED);
-            doc.text(`${cumulativeDist.toFixed(1)} km total`, pageW - margin - 10, currentY, { align: 'right' });
-            currentY += 15;
-
-            if (!isFinish) {
-                const itemGap = 14;
-                const leftColW = boxW * 0.6;
-                const rightColW = boxW * 0.4 - 20;
-                const colGap = 20;
-                let leftColY = currentY;
-                let rightColY = currentY;
-
-                doc.setFontSize(9);
-                doc.setTextColor(PALETTE.TEXT);
-
-                doc.setFont('helvetica', 'bold');
-                doc.text('Nutrition:', margin + 10, leftColY);
-                doc.setFont('helvetica', 'normal');
-                doc.text(`Carbs: ~${info.carbsNeeded}g · Water: ~${info.waterNeeded}ml`, margin + 70, leftColY);
-                leftColY += itemGap;
-
-                doc.setFont('helvetica', 'bold');
-                doc.text('Plan:', margin + 10, leftColY);
-                doc.setFont('helvetica', 'normal');
-                doc.text(`Stop for ${formatMinutes(totalStopTimeMins)} · Depart at ${departureTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, margin + 70, leftColY);
-                leftColY += itemGap;
-
-                if (leg.notes) {
-                    doc.setFont('helvetica', 'bold');
-                    doc.text('Crew Notes:', margin + 10, leftColY);
-                    doc.setFont('helvetica', 'normal');
-                    const notes = doc.splitTextToSize(leg.notes, leftColW - 70);
-                    doc.text(notes, margin + 70, leftColY);
-                    leftColY += doc.getTextDimensions(notes).h + 5;
-                }
-
-                if (showChecklist && checklistItems.length > 0) {
-                    doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(PALETTE.MUTED);
-                    doc.text('Checklist:', margin + leftColW + colGap, rightColY);
-                    rightColY += itemGap;
-
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(PALETTE.TEXT);
-                    const checkboxSize = 8;
-                    checklistItems.forEach(item => {
-                        doc.setDrawColor(PALETTE.MUTED);
-                        doc.rect(margin + leftColW + colGap, rightColY - checkboxSize, checkboxSize, checkboxSize, 'S');
-                        const textLines = doc.splitTextToSize(item, rightColW - checkboxSize - 4);
-                        doc.text(textLines, margin + leftColW + colGap + checkboxSize + 4, rightColY);
-                        rightColY += doc.getTextDimensions(textLines).h + 4;
-                    });
-                }
-                
-                currentY = Math.max(leftColY, rightColY) + 10;
-                
-                if (showFeedback && feedbackItems.length > 0) {
-                    currentY += 10;
-                    doc.setDrawColor(PALETTE.BORDER);
-                    doc.setLineDashPattern([3,3], 0);
-                    doc.line(margin + 10, currentY - 5, pageW - margin - 10, currentY - 5);
-                    doc.setLineDashPattern([], 0);
-                    
-                    doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(PALETTE.MUTED);
-                    doc.text('Post-Leg Feedback:', margin + 10, currentY);
-                    currentY += itemGap;
-
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(PALETTE.TEXT);
-                    feedbackItems.forEach(item => {
-                        if (currentY + 15 > cardY + cardHeight) return;
-                        const fullText = '• ' + item + ':';
-                        doc.text(fullText, margin + 10, currentY);
-                        const textW = doc.getTextWidth(fullText);
-                        const lineY = currentY + doc.getLineHeight() * 0.25;
-                        doc.setLineDashPattern([2, 2], 0);
-                        doc.setDrawColor(PALETTE.MUTED);
-                        doc.line(margin + 10 + textW + 5, lineY, pageW - margin - 10, lineY);
-                        doc.setLineDashPattern([], 0);
-                        currentY += itemGap * 1.2;
-                    });
-                }
-            }
-            currentY = cardY + cardHeight + 15;
-        }
-
-        doc.save(`${raceName.replace(/ /g, '_')}_RacePlan.pdf`);
-    };
-
-
-    const handleSaveTemplates = (checklist: string[], feedback: string[]) => {
-        setChecklistItems(checklist);
-        setFeedbackItems(feedback);
-    }
     
-    const handleAutoFillNotes = useCallback((fillTargets: { runner: boolean; crew: boolean; pacer: boolean; }) => {
-        if (!isLegMode || !legPlan || legs.length === 0) {
-            alert("Cannot auto-fill notes. Ensure you are in 'By Legs' mode and a plan has been calculated.");
-            return;
-        }
-
-        const totalRaceDistance = legPlan[legPlan.length - 1].cumulativeDist;
-        
-        let isPacerActive = false;
-        const updatedLegs = legs.map(leg => {
-            const legInfo = legPlan.find(lp => lp.leg.id === leg.id);
-            if (!legInfo) return leg;
-
-            let finalRunnerNotes = leg.runnerNotes;
-            let finalPacerNotes = leg.pacerNotes;
-            let finalCrewNotes = leg.notes;
-            const { startKm, endKm, segments, cumulativeDist, arrivalTime } = legInfo;
-
-            if (leg.pacerIn) isPacerActive = true;
-
-            // --- 1. Runner Notes ---
-            if (fillTargets.runner) {
-                let baseNoteGroupKey: keyof typeof MENTAL_NOTES;
-                const isNight = nightPeriods.some(p => startKm < p.x2 && endKm > p.x1);
-                if (isNight) baseNoteGroupKey = 'night';
-                else if (endKm > totalRaceDistance * 0.9) baseNoteGroupKey = 'finalPush';
-                else if (startKm >= totalRaceDistance * 0.6) baseNoteGroupKey = 'painCave';
-                else if (startKm <= totalRaceDistance * 0.15) baseNoteGroupKey = 'start';
-                else baseNoteGroupKey = 'longGrind';
-                
-                let finalNotes = [...MENTAL_NOTES[baseNoteGroupKey]];
-                const injectNote = (notePool: readonly string[]) => { finalNotes = replaceRandomNote(finalNotes, getRandomNote(notePool as string[], finalNotes)); };
-                
-                if (selectedNoteModules.includes('pacingPro') && startKm < totalRaceDistance * 0.25) {
-                    injectNote(HELPER_NOTE_MODULES.pacingPro.notes);
-                    if (segments.some(seg => seg.grade < -5)) finalNotes = replaceRandomNote(finalNotes, "Go easy on the descents. Soft knees.");
+                if (context.distPercentageStart <= 25) weightedNotePool.push({ note: getRandomNote(MENTAL_NOTES.start), weight: 1 });
+                else if (context.distPercentageStart <= 75) weightedNotePool.push({ note: getRandomNote(MENTAL_NOTES.longGrind), weight: 1 });
+                else weightedNotePool.push({ note: getRandomNote(MENTAL_NOTES.finalPush), weight: 1 });
+    
+                const pickedNotes: string[] = [];
+                weightedNotePool.sort((a, b) => b.weight - a.weight);
+                for (const item of weightedNotePool) {
+                    if (pickedNotes.length >= 3) break;
+                    if (!pickedNotes.includes(item.note)) {
+                        pickedNotes.push(item.note);
+                    }
                 }
-                if (selectedNoteModules.includes('fuelingGuardian') && startKm >= totalRaceDistance * 0.25) injectNote(HELPER_NOTE_MODULES.fuelingGuardian.notes);
-                if (selectedNoteModules.includes('painResilienceCoach') && startKm >= totalRaceDistance * 0.60) injectNote(HELPER_NOTE_MODULES.painResilienceCoach.notes);
-                if (selectedNoteModules.includes('trailTechnician') && (leg.terrain === 'technical' || (leg.terrainSegments && leg.terrainSegments.some(ts => ts.terrain === 'technical')))) injectNote(HELPER_NOTE_MODULES.trailTechnician.notes);
-                if (selectedNoteModules.includes('focusMaster') && startKm > totalRaceDistance * 0.25 && (leg.terrain === 'road' || leg.terrain === 'smooth')) injectNote(HELPER_NOTE_MODULES.focusMaster.notes);
-                if (selectedNoteModules.includes('aidStationNinja')) finalNotes = replaceRandomNote(finalNotes, `Approaching Aid Station: ${getRandomNote(HELPER_NOTE_MODULES.aidStationNinja.notes, finalNotes)}`);
+                if (pickedNotes.length < 3) {
+                     pickedNotes.push(getRandomNote(Object.values(MENTAL_NOTES).flat(), pickedNotes));
+                }
+    
+                leg.runnerNotes = pickedNotes.slice(0, 3).join('\n');
+            }
+
+            // Crew Notes
+            if (targets.crew) {
+                let contextPool: SupportNote[] = [];
+
+                const isHot = tempC > 24;
+                const isCold = tempC < 7;
+                const distPct = (info.startKm / totalDist) * 100;
+                const netLossPerKm = info.leg.dist > 0 ? (info.leg.loss - info.leg.gain) / info.leg.dist : 0;
+
+                // Pacing Pro Logic
+                if (distPct <= 30) {
+                    contextPool.push(...COMPREHENSIVE_CREW_NOTES.pacingPro);
+                }
+                if (distPct <= 40 && netLossPerKm > 38) { // ~200ft/mile descent
+                    const downhillNote = COMPREHENSIVE_CREW_NOTES.pacingPro.find(n => n.do.includes('downhill'));
+                    if (downhillNote) contextPool.unshift(downhillNote); // Prioritize
+                }
+
+                // Fueling Guardian Logic
+                if (distPct >= 40 || isNightLeg || isHot || isCold) {
+                    contextPool.push(...COMPREHENSIVE_CREW_NOTES.fuelingGuardian);
+                }
                 
-                finalRunnerNotes = [...new Set(finalNotes)].slice(0, 5).join('\n');
+                // Pain & Resilience Coach Logic
+                if (distPct >= 60 || (isNightLeg && info.arrivalTime.getHours() >= 2 && info.arrivalTime.getHours() < 5)) {
+                    contextPool.push(...COMPREHENSIVE_CREW_NOTES.painResilienceCoach);
+                }
+                
+                let notePool: SupportNote[] = [...new Set(contextPool)]; // Remove duplicates from context
+                let pickedNotes: SupportNote[] = [];
+            
+                // Aim for up to 2 context-specific notes
+                const numContextNotes = notePool.length > 0 ? Math.min(notePool.length, 2) : 0;
+                
+                for (let i = 0; i < numContextNotes; i++) {
+                    const note = getRandomSupportNote(notePool, pickedNotes.map(n => n.do));
+                    if (note) pickedNotes.push(note);
+                }
+            
+                // Fill up to 2-3 total notes with general advice
+                const numGeneralNotes = Math.max(1, 2 - pickedNotes.length);
+                for (let i = 0; i < numGeneralNotes; i++) {
+                    const note = getRandomSupportNote(COMPREHENSIVE_CREW_NOTES.general, pickedNotes.map(n => n.do));
+                    if (note) pickedNotes.push(note);
+                }
+                
+                // If for some reason we still have no notes, grab one general.
+                if(pickedNotes.length === 0) {
+                    const note = getRandomSupportNote(COMPREHENSIVE_CREW_NOTES.general, []);
+                    if (note) pickedNotes.push(note);
+                }
+            
+                leg.notes = pickedNotes
+                    .map(note => `DO: ${note.do}\nSAY: ${note.say}`)
+                    .join('\n\n');
+            }
+
+            // Pacer Notes
+            if (targets.pacer) {
+                if (isPacerOnThisLeg) {
+                    let notePool: SupportNote[] = [];
+                    const distPct = (info.startKm / totalDist) * 100;
+            
+                    // M1: Pacing Pro
+                    if (distPct >= 40 && distPct <= 70) notePool.push(...PACER_NOTE_MODULES.pacingPro);
+                    if (info.segments.some(s => s.grade < -3)) notePool.push(...PACER_NOTE_MODULES.pacingPro.filter(n => n.do.toLowerCase().includes("rhythm")));
+                    if (info.segments.some(s => s.grade > 5)) notePool.push(...PACER_NOTE_MODULES.pacingPro.filter(n => n.do.toLowerCase().includes("heart rate")));
+
+                    // M2: Fueling Guardian
+                    if (isNightLeg) notePool.push(...PACER_NOTE_MODULES.fuelingGuardian);
+                    if (tempC > 24) notePool.push(...PACER_NOTE_MODULES.fuelingGuardian.filter(n => n.say.toLowerCase().includes("salt") || n.say.toLowerCase().includes("fluid")));
+                    if (distPct >= 50) notePool.push(...PACER_NOTE_MODULES.fuelingGuardian);
+            
+                    // M3: Pain & Resilience
+                    if (distPct >= 65) notePool.push(...PACER_NOTE_MODULES.painResilienceCoach);
+                    if (isNightLeg && info.arrivalTime.getHours() >= 2 && info.arrivalTime.getHours() < 5) notePool.push(...PACER_NOTE_MODULES.painResilienceCoach);
+                    if (distPct > 60 && info.segments.some(s => s.grade > 10)) notePool.push(...PACER_NOTE_MODULES.painResilienceCoach.filter(n => n.say.toLowerCase().includes("hill") || n.say.toLowerCase().includes("earning")));
+            
+                    // M4: Trail Technician
+                    const isTechnical = info.leg.terrain === 'technical' || (info.leg.terrainSegments && info.leg.terrainSegments.some(ts => ts.terrain === 'technical'));
+                    if (info.segments.some(s => s.grade > 15)) notePool.push(...PACER_NOTE_MODULES.trailTechnician.filter(n => n.do.toLowerCase().includes('uphill') || n.say.toLowerCase().includes('hike')));
+                    if (info.segments.some(s => s.grade < -10) || isTechnical) notePool.push(...PACER_NOTE_MODULES.trailTechnician.filter(n => n.do.toLowerCase().includes('downhill') || n.do.toLowerCase().includes('technical') || n.say.toLowerCase().includes('rocks')));
+                    if (isNightLeg && isTechnical) notePool.push(...PACER_NOTE_MODULES.trailTechnician.filter(n => n.say.toLowerCase().includes('light bubble') || n.say.toLowerCase().includes('lift your feet')));
+            
+                    // M5: Focus Master
+                    const avgNetGrade = info.leg.dist > 0 ? (info.leg.gain - info.leg.loss) / (info.leg.dist * 10) : 0;
+                    const isMonotonous = !isTechnical && Math.abs(avgNetGrade) < 3;
+                    if ((distPct >= 40 && distPct <= 80 && isMonotonous) || (isNightLeg && isMonotonous)) {
+                        notePool.push(...PACER_NOTE_MODULES.focusMaster);
+                    }
+            
+                    // M6: Aid Station Ninja
+                    notePool.push(...PACER_NOTE_MODULES.aidStationNinja);
+                    if (isNightLeg) {
+                        notePool.push(...PACER_NOTE_MODULES.aidStationNinja.filter(n => n.do.toLowerCase().includes('headlamp')));
+                    }
+                    
+                    let uniqueContextNotes = [...new Set(notePool)];
+                    let pickedNotes: SupportNote[] = [];
+            
+                    const numNotesToPick = 3;
+                    for (let i = 0; i < numNotesToPick; i++) {
+                        const pool = uniqueContextNotes.length > 0 ? uniqueContextNotes : GENERAL_PACER_NOTES;
+                        const note = getRandomSupportNote(pool, pickedNotes.map(n => n.do));
+                        if (note) {
+                            pickedNotes.push(note);
+                            uniqueContextNotes = uniqueContextNotes.filter(n => n.do !== note.do);
+                        }
+                    }
+                    
+                    leg.pacerNotes = pickedNotes
+                        .map(note => `DO: ${note.do}\nSAY: ${note.say}`)
+                        .join('\n\n');
+                } else {
+                    leg.pacerNotes = '';
+                }
             }
             
-            // --- 2. Pacer Notes ---
-            if (fillTargets.pacer && isPacerActive) {
-                const legMidTime = new Date(arrivalTime.getTime() - (legInfo.legRunningTime / 2) * 1000);
-                const legIsNight = isTimeNight(legMidTime, nightFrom, nightTo);
-                let pacerNote: SupportNote;
-                if (legIsNight) {
-                    pacerNote = getRandomSupportNote(PACER_NOTE_MODULES.guardian);
-                } else if (startKm >= totalRaceDistance * 0.75) {
-                    pacerNote = getRandomSupportNote(PACER_NOTE_MODULES.closer);
-                } else {
-                    pacerNote = getRandomSupportNote(PACER_NOTE_MODULES.strategist);
-                }
-                finalPacerNotes = `DO: ${pacerNote.do}\nSAY: ${pacerNote.say}`;
-            }
-
             if (leg.pacerOut) isPacerActive = false;
-
-            // --- 3. Crew Notes ---
-            if (fillTargets.crew && leg.crewAccess) {
-                const aidStationIsNight = isTimeNight(arrivalTime, nightFrom, nightTo);
-                let crewNote: SupportNote;
-                if (aidStationIsNight) {
-                    crewNote = getRandomSupportNote(CREW_NOTE_MODULES.night);
-                } else if (cumulativeDist >= totalRaceDistance * 0.85) {
-                    crewNote = getRandomSupportNote(CREW_NOTE_MODULES.finalPush);
-                } else if (cumulativeDist > totalRaceDistance * 0.30) {
-                    crewNote = getRandomSupportNote(CREW_NOTE_MODULES.midRace);
-                } else {
-                    crewNote = getRandomSupportNote(CREW_NOTE_MODULES.early);
-                }
-                finalCrewNotes = `DO: ${crewNote.do}\nSAY: ${crewNote.say}`;
-            }
-
-            return { ...leg, runnerNotes: finalRunnerNotes, pacerNotes: finalPacerNotes, notes: finalCrewNotes };
+            return leg;
         });
-
+        
         setLegs(updatedLegs);
-        setAutoFilledTargets(prev => ({
-            runner: prev.runner || fillTargets.runner,
-            crew: prev.crew || fillTargets.crew,
-            pacer: prev.pacer || fillTargets.pacer,
-        }));
-    }, [isLegMode, legs, legPlan, nightPeriods, selectedNoteModules, nightFrom, nightTo]);
+    };
 
-    useEffect(() => {
-        // This effect handles dynamically filling notes when crew/pacer status changes,
-        // if the user has previously used the main auto-fill feature.
-        if (!legPlan || !isLegMode || (!autoFilledTargets.crew && !autoFilledTargets.pacer)) {
-            prevLegsRef.current = legs;
-            return;
-        }
+    const nightPeriods = useMemo((): NightPeriod[] => {
+        if (!computation) return [];
+        const periods: NightPeriod[] = [];
+        let inNight = false;
+        let startKm = 0;
+        const raceStartDate = new Date(`${startDate}T${startTime}`);
+        if(isNaN(raceStartDate.getTime())) return [];
 
-        const prevLegs = prevLegsRef.current;
-        if (legs === prevLegs || legs.length !== prevLegs.length) {
-            prevLegsRef.current = legs;
-            return;
-        }
-
-        const getPacerStatusMap = (legsToCheck: Leg[]): Map<string, boolean> => {
-            const statusMap = new Map<string, boolean>();
-            let isPacerActive = false;
-            for (const leg of legsToCheck) {
-                if (leg.pacerIn) isPacerActive = true;
-                statusMap.set(leg.id, isPacerActive);
-                if (leg.pacerOut) isPacerActive = false;
+        computation.chartData.forEach(p => {
+            const time = new Date(raceStartDate.getTime() + (p.cumulativeTime || 0) * 1000);
+            const isCurrentlyNight = isTimeNight(time, nightFrom, nightTo);
+            if (isCurrentlyNight && !inNight) {
+                inNight = true;
+                startKm = p.km;
+            } else if (!isCurrentlyNight && inNight) {
+                inNight = false;
+                periods.push({ x1: startKm, x2: p.km });
             }
-            return statusMap;
+        });
+        if (inNight) {
+            periods.push({ x1: startKm, x2: computation.chartData[computation.chartData.length - 1].km });
+        }
+        return periods;
+    }, [computation, startDate, startTime, nightFrom, nightTo]);
+    
+    const raceEvents = useMemo((): RaceEvent[] => {
+        if (!computation || !sunTimes.sunrise || !sunTimes.sunset) return [];
+        const events: RaceEvent[] = [];
+        const raceStartDate = new Date(`${startDate}T${startTime}`);
+        if(isNaN(raceStartDate.getTime())) return [];
+        const sunsetHour = sunTimes.sunset.getHours();
+        const sunsetMin = sunTimes.sunset.getMinutes();
+        const sunriseHour = sunTimes.sunrise.getHours();
+        const sunriseMin = sunTimes.sunrise.getMinutes();
+
+        let day = 0;
+        while (true) {
+            const currentSunset = new Date(raceStartDate);
+            currentSunset.setDate(currentSunset.getDate() + day);
+            currentSunset.setHours(sunsetHour, sunsetMin, 0, 0);
+
+            const currentSunrise = new Date(raceStartDate);
+            currentSunrise.setDate(currentSunrise.getDate() + day + 1); // Sunrise is next day
+            currentSunrise.setHours(sunriseHour, sunriseMin, 0, 0);
+
+            const sunsetPoint = computation.chartData.find(p => (raceStartDate.getTime() + (p.cumulativeTime || 0) * 1000) >= currentSunset.getTime());
+            if (sunsetPoint) events.push({ km: sunsetPoint.km, type: 'sunset' });
+
+            const sunrisePoint = computation.chartData.find(p => (raceStartDate.getTime() + (p.cumulativeTime || 0) * 1000) >= currentSunrise.getTime());
+            if (sunrisePoint) events.push({ km: sunrisePoint.km, type: 'sunrise' });
+
+            if (!sunsetPoint && !sunrisePoint) break;
+            if ((raceStartDate.getTime() + computation.finalTime * 1000) < currentSunrise.getTime()) break;
+            
+            day++;
+        }
+        return events;
+    }, [computation, sunTimes, startDate, startTime]);
+
+    const handleDownloadManual = () => {
+        const doc = new jsPDF();
+        const pageW = doc.internal.pageSize.getWidth();
+        const margin = 30;
+        const maxW = pageW - margin * 2;
+        let y = margin;
+    
+        const checkPageBreak = (spaceNeeded = 20) => {
+            if (y + spaceNeeded > doc.internal.pageSize.getHeight() - margin) {
+                doc.addPage();
+                y = margin;
+                doc.setFontSize(8).setTextColor(150, 150, 150);
+                doc.text(`Page ${doc.getNumberOfPages()}`, pageW - margin, doc.internal.pageSize.getHeight() - 15, { align: 'right' });
+                doc.text('Consistent Running Ultra Planner Manual', margin, doc.internal.pageSize.getHeight() - 15);
+                y = margin;
+            }
         };
-
-        const currentPacerStatus = getPacerStatusMap(legs);
-        const prevPacerStatus = getPacerStatusMap(prevLegs);
+    
+        const addText = (text: string, size: number, style: 'normal' | 'bold' | 'italic', options?: any, spaceAfter = 5) => {
+            checkPageBreak(size * 2);
+            doc.setFontSize(size).setFont('helvetica', style);
+            const splitText = doc.splitTextToSize(text, maxW);
+            doc.text(splitText, margin, y, options);
+            y += doc.getTextDimensions(splitText).h + spaceAfter;
+        };
+    
+        const addTitle = (text: string) => { addText(text, 22, 'bold', { align: 'center' }, 20); };
+        const addHeading = (text: string) => { checkPageBreak(40); addText(text, 16, 'bold', {}, 10); };
+        const addSubHeading = (text: string) => { checkPageBreak(30); addText(text, 12, 'bold', {}, 5); };
+        const addListItem = (text: string, indent = 0) => {
+            const bullet = '•  ';
+            const fullText = bullet + text;
+            const parts = doc.splitTextToSize(fullText, maxW - (15 * (indent + 1)));
+            checkPageBreak(doc.getTextDimensions(parts).h + 5);
+            doc.setFontSize(10).setFont('helvetica', 'normal');
+            doc.text(parts, margin + (15 * indent), y);
+            y += doc.getTextDimensions(parts).h + 3;
+        };
+    
+        // --- Cover Page ---
+        addTitle("Consistent Running Ultra Planner\nUser Manual");
+        y += 20;
+        addText("Your comprehensive guide to planning, strategizing, and executing your best ultramarathon performance.", 12, 'italic', { align: 'center' });
+    
+        // --- Section 1: Core Concepts ---
+        doc.addPage(); 
+        y = margin;
+        doc.setFontSize(8).setTextColor(150, 150, 150);
+        doc.text(`Page ${doc.getNumberOfPages()}`, pageW - margin, doc.internal.pageSize.getHeight() - 15, { align: 'right' });
+        doc.text('Consistent Running Ultra Planner Manual', margin, doc.internal.pageSize.getHeight() - 15);
         
-        let needsUpdate = false;
-        const updatedLegs = [...legs];
-        const totalRaceDistance = legPlan.length > 0 ? legPlan[legPlan.length - 1].cumulativeDist : 0;
+        addHeading("1. Introduction: How The Planner Works");
+        addText("The planner simulates your race by starting with a baseline of your fitness and then applying various real-world challenges (modifiers) to predict your pace and finish time. It's built on established sports science principles to give you a realistic and actionable plan.", 10, 'normal');
+        addListItem("Baseline Fitness: We start with your 'Flat Time'—a theoretical best-case performance for your race distance on a flat, smooth surface, calculated from a recent race result.");
+        addListItem("Real-World Modifiers: We then adjust this baseline for every segment of the race, accounting for elevation, terrain, fatigue, weather, night running, and planned stops.");
+
+        addHeading("2. Quick Start Guide");
+        addListItem("Enter Race Basics: Provide a recent race result (e.g., a marathon time) to establish your baseline fitness.");
+        addListItem("Define the Course: Import a GPX file for the highest accuracy, then use 'By Legs' mode to set up your aid stations.");
+        addListItem("Tune Your Runner Profile: Select a preset (e.g., 'Mountain') and fine-tune it to match your unique strengths and weaknesses.");
+        addListItem("Automate & Analyze: Use 'Auto-fill Notes' for strategic advice, then analyze the pace chart and time breakdown.");
+        addListItem("Print & Go: Generate a full PDF for your crew and handy, pocket-sized cards for yourself and your pacers.");
+
+        // --- Section 3: Detailed Setup ---
+        addHeading("3. Detailed Setup: Race & Fitness");
+        addSubHeading("3.1 Model Type");
+        addListItem("'Predict Time': The standard mode. Forecasts a finish time from a past result.");
+        addListItem("'Plan for Goal': Works backwards from a target finish time to show the required fitness level (your 'flat time').");
         
-        for (let i = 0; i < legs.length; i++) {
-            const leg = legs[i];
-            const prevLeg = prevLegs[i];
-            if (!prevLeg || leg.id !== prevLeg.id) continue;
+        addSubHeading("3.2 Reference Performance & Flat Time");
+        addText("This is the most critical input. The planner uses the Riegel Endurance Model (T2 = T1 * (D2/D1)^1.06) to convert your past result into an equivalent 'flat time' for your ultra distance, accounting for natural performance drop-off.", 10, 'normal');
+        
+        addSubHeading("3.3 Sleep Planning & Fatigue Reset");
+        addText("Enabling 'Plan for sleep stops?' allows you to add sleep time at aid stations. This applies a 'fatigue reset' bonus to the model, differentiating between metabolic and muscular recovery:", 10, 'normal');
+        addListItem("Metabolic Recovery: The first 20-30 minutes provide the most significant benefit for mental and cardio revival, with diminishing returns after. Governed by the getFatigueReset() function.", 1);
+        addListItem("Muscular Recovery: Deep muscular damage requires longer rest. The model (getMuscularFatigueReset()) applies a smaller, slower reset for this, reflecting that short naps won't fully repair trashed quads.", 1);
+        addListItem("Example: A 30-minute nap provides a 20% metabolic fatigue reset but only a 5% muscular reset.", 1);
 
-            const legInfo = legPlan.find(lp => lp.leg.id === leg.id);
-            if (!legInfo) continue;
+        doc.addPage(); y = margin;
+        doc.setFontSize(8).setTextColor(150, 150, 150);
+        doc.text(`Page ${doc.getNumberOfPages()}`, pageW - margin, doc.internal.pageSize.getHeight() - 15, { align: 'right' });
+        doc.text('Consistent Running Ultra Planner Manual', margin, doc.internal.pageSize.getHeight() - 15);
+        y=margin;
 
-            // 1. Check for crew access change (from false to true) and fill if notes are empty
-            if (autoFilledTargets.crew && leg.crewAccess && !prevLeg.crewAccess && !leg.notes) {
-                const aidStationIsNight = isTimeNight(legInfo.arrivalTime, nightFrom, nightTo);
-                let crewNote: SupportNote;
-                if (aidStationIsNight) {
-                    crewNote = getRandomSupportNote(CREW_NOTE_MODULES.night);
-                } else if (legInfo.cumulativeDist >= totalRaceDistance * 0.85) {
-                    crewNote = getRandomSupportNote(CREW_NOTE_MODULES.finalPush);
-                } else if (legInfo.cumulativeDist > totalRaceDistance * 0.30) {
-                    crewNote = getRandomSupportNote(CREW_NOTE_MODULES.midRace);
-                } else {
-                    crewNote = getRandomSupportNote(CREW_NOTE_MODULES.early);
-                }
-                updatedLegs[i] = { ...updatedLegs[i], notes: `DO: ${crewNote.do}\nSAY: ${crewNote.say}` };
-                needsUpdate = true;
-            }
+        addHeading("4. Detailed Setup: Course Details");
+        addSubHeading("4.1 Simple vs. By Legs Mode");
+        addText("'By Legs' mode is essential for detailed planning. It allows you to define segments between aid stations, plan stop times, and generate printable guides.", 10, 'normal');
+        
+        addSubHeading("4.2 Fine-Tuning Terrain");
+        addText("If a leg has multiple terrain types, click 'Fine Tune Terrain'. You can break it into sub-segments (e.g., 5km technical, 8km smooth). These colors will appear on the mini-map in the main race plan, giving your crew a quick visual reference.", 10, 'normal');
 
-            // 2. Check for pacer status change (from false to true) and fill if pacer notes are empty
-            const isPacerOnThisLeg = currentPacerStatus.get(leg.id) || false;
-            const wasPacerOnThisLeg = prevPacerStatus.get(leg.id) || false;
+        addHeading("5. The Runner Profile (The Secret Sauce!)");
+        addText("Accessed via the 'Runner Profile' button, this is where you customize the model. Key settings include:", 10, 'normal');
+        addListItem("Fatigue Model: 'Base Metabolic Fade' is your general endurance. 'Muscular Resilience' is critical – it models how well your quads handle downhill pounding. A lower value here means you're more resilient.");
+        addListItem("Hiking Model: Enabling this is highly recommended! The model will strategically 'power-hike' steep climbs, which conserves energy and reduces muscular fatigue. 'VAM' is your hiking climbing speed in vertical meters per hour.");
 
-            if (autoFilledTargets.pacer && isPacerOnThisLeg && !wasPacerOnThisLeg && !leg.pacerNotes) {
-                const legMidTime = new Date(legInfo.arrivalTime.getTime() - (legInfo.legRunningTime / 2) * 1000);
-                const legIsNight = isTimeNight(legMidTime, nightFrom, nightTo);
-                let pacerNote: SupportNote;
-                if (legIsNight) {
-                    pacerNote = getRandomSupportNote(PACER_NOTE_MODULES.guardian);
-                } else if (legInfo.startKm >= totalRaceDistance * 0.75) {
-                    pacerNote = getRandomSupportNote(PACER_NOTE_MODULES.closer);
-                } else {
-                    pacerNote = getRandomSupportNote(PACER_NOTE_MODULES.strategist);
-                }
-                updatedLegs[i] = { ...updatedLegs[i], pacerNotes: `DO: ${pacerNote.do}\nSAY: ${pacerNote.say}` };
-                needsUpdate = true;
-            }
-        }
+        addHeading("6. Strategic Automation");
+        addSubHeading("6.1 Mental Strategy & Auto-Fill Notes");
+        addText("This feature automates your mental game. First, click 'Mental Strategy' and select 'helpers' that match your weaknesses (e.g., 'The Fueling Guardian'). Then, click 'Auto-fill Notes'. The planner generates context-aware notes based on:", 10, 'normal');
+        addListItem("Race Position: Early-race notes focus on conservative pacing; late-race notes are about finishing strong.");
+        addListItem("Time of Day & Weather: The plan analyzes your pace against sunrise/sunset and temperature. Night legs get safety notes, while legs in the heat of the day get notes about cooling strategies.");
+        addListItem("Your Chosen Strategy: It injects advice from your selected 'helper' modules (e.g., fueling reminders).");
 
-        if (needsUpdate) {
-            setLegs(updatedLegs);
-        }
 
-        prevLegsRef.current = legs;
-    }, [legs, legPlan, isLegMode, autoFilledTargets, nightFrom, nightTo]);
+        doc.addPage(); y = margin;
+        doc.setFontSize(8).setTextColor(150, 150, 150);
+        doc.text(`Page ${doc.getNumberOfPages()}`, pageW - margin, doc.internal.pageSize.getHeight() - 15, { align: 'right' });
+        doc.text('Consistent Running Ultra Planner Manual', margin, doc.internal.pageSize.getHeight() - 15);
+        y=margin;
 
+        addHeading("7. The Output: Using Your Plan");
+        addSubHeading("7.1 The Full Race Plan (For Crew)");
+        addText("The main plan is a printable timeline for your crew. Here's how to read it:", 10, 'normal');
+        addListItem("Header: Shows leg number and start/end points.");
+        addListItem("Mini-Map: A visual profile of the leg's elevation. The colors reflect the terrain you've set (or fine-tuned).");
+        addListItem("Key Stats: Total distance, gain/loss, and the model's predicted average pace for that leg.");
+        addListItem("Aid Station Box: Shows predicted arrival/departure times, total stop time, and calculated nutrition needs (carbs/water) for the leg you just completed.");
+        addListItem("Nutrition: Based on your hourly targets and the predicted running time for the previous leg.");
+        addListItem("Crew Notes & Checklists: Specific instructions you've written or that were auto-filled, plus your customized checklist.", 1);
+
+        addSubHeading("7.2 Customizing Checklists & Feedback");
+        addText("Click 'Edit Aid Station Templates' to customize the default checklist and feedback items that appear on your printed plan. This lets you create a standardized process for every aid station.", 10, 'normal');
+
+        addSubHeading("7.3 Runner & Pacer Cards");
+        addText("These are small, foldable cards designed to be carried with you. They show the profile, key markers, and your personal or pacer-specific notes for one leg at a time. Perfect for quick reference on the trail.", 10, 'normal');
+    
+        doc.save("Ultra_Planner_Manual.pdf");
+    };
 
     return (
-        <div className="min-h-screen bg-background text-text font-sans p-4 lg:p-6">
-            <main className="max-w-7xl mx-auto space-y-6">
-                 <header className="flex flex-col sm:flex-row justify-between items-center gap-4 py-4 border-b-2 border-slate-700/50">
-                    <div className="flex items-center gap-4">
-                        <Logo />
-                        <div>
-                            <h1 className="text-3xl font-bold text-text">Consistent Running</h1>
-                            <h2 className="text-xl text-muted">Ultra Planner</h2>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <Button onClick={() => setIsWelcomeModalOpen(true)} variant="secondary">
-                            App Guide
-                        </Button>
-                        <Button onClick={() => setIsRunnerCardsModalOpen(true)} variant="primary" disabled={!isLegMode || legs.length === 0}>
-                            Print Cards
-                        </Button>
-                    </div>
-                </header>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                    <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-2">
-                        <Controls
-                            raceName={raceName} setRaceName={setRaceName}
-                            flatTimeStr={flatTimeStr}
-                            referenceDistance={referenceDistance} setReferenceDistance={setReferenceDistance}
-                            referenceTimeStr={referenceTimeStr} setReferenceTimeStr={setReferenceTimeStr}
-                            distanceKm={distanceKm} setDistanceKm={setDistanceKm}
-                            startDate={startDate} setStartDate={setStartDate}
-                            startTime={startTime} setStartTime={setStartTime}
-                            nightFrom={nightFrom} setNightFrom={setNightFrom}
-                            nightTo={nightTo} setNightTo={setNightTo}
-                            tempC={tempC} setTempC={setTempC}
-                            nightTempDrop={nightTempDrop} setNightTempDrop={setNightTempDrop}
-                            humPct={humPct} setHumPct={setHumPct}
-                            sun={sun} setSun={setSun}
-                            gpxData={gpxData} setGpxData={setGpxData}
-                            gpxFileName={gpxFileName} setGpxFileName={setGpxFileName}
-                            onGpxLoad={parseGPX}
-                            legs={legs}
-                            isLegMode={isLegMode}
-                            fillLegsFromGpx={fillLegsFromGpx}
-                            openProfileModal={() => setIsProfileModalOpen(true)}
-                            openHowModal={() => setIsWhyModalOpen(true)}
-                            openSleepInfoModal={() => setIsSleepInfoModalOpen(true)}
-                            openNightInfoModal={() => setIsNightInfoModalOpen(true)}
-                            openRiegelInfoModal={() => setIsRiegelInfoModalOpen(true)}
-                            carbsPerHour={carbsPerHour} setCarbsPerHour={setCarbsPerHour}
-                            waterPerHour={waterPerHour} setWaterPerHour={setWaterPerHour}
-                            sunTimesAvailable={!!sunTimes.sunrise}
-                            modelType={modelType} setModelType={setModelType}
-                            goalTimeStr={goalTimeStr} setGoalTimeStr={setGoalTimeStr}
-                            computationFlatTime={computation?.flatTime}
-                            isSleepPlanned={isSleepPlanned} setIsSleepPlanned={setIsSleepPlanned}
-                            showChecklist={showChecklist} setShowChecklist={setShowChecklist}
-                            showFeedback={showFeedback} setShowFeedback={setShowFeedback}
-                            isGreyscale={isGreyscale} setIsGreyscale={setIsGreyscale}
-                        />
-                         <Card>
-                            <LegsEditor
-                                legs={legs}
-                                setLegs={setLegs}
-                                isLegMode={isLegMode}
-                                setIsLegMode={setIsLegMode}
-                                simpleGain={simpleGain} setSimpleGain={setSimpleGain}
-                                simpleLoss={simpleLoss} setSimpleLoss={setSimpleLoss}
-                                simpleTerrain={simpleTerrain} setSimpleTerrain={setSimpleTerrain}
-                                distanceKm={distanceKm}
-                                isSleepPlanned={isSleepPlanned}
-                                openLegsInfoModal={() => setIsLegsInfoModalOpen(true)}
-                                openAutoNotesInfoModal={() => setIsAutoNotesInfoModalOpen(true)}
-                                openAidStationModal={() => setIsAidStationModalOpen(true)}
-                                setTuningLeg={setTuningLeg}
-                                onFocusLeg={handleFocusLeg}
-                                onAutoFillNotes={handleAutoFillNotes}
-                                onOpenMentalStrategy={() => setIsMentalStrategyModalOpen(true)}
-                            />
-                        </Card>
-                        <MarkersEditor markers={markers} setMarkers={setMarkers} />
-                    </div>
-                    <div className="lg:col-span-2 space-y-6">
-                        <Visuals
-                            computation={computation}
-                            smoothM={smoothM}
-                            setSmoothM={setSmoothM}
-                            legs={legs}
-                            isLegMode={isLegMode}
-                            nightPeriods={nightPeriods}
-                            raceEvents={raceEvents}
-                            startDate={startDate}
-                            startTime={startTime}
-                            nightFrom={nightFrom}
-                            nightTo={nightTo}
-                            isChartExpanded={isChartExpanded}
-                            setIsChartExpanded={setIsChartExpanded}
-                            openTimeBreakdownExplanationModal={() => setIsTimeBreakdownExplanationModalOpen(true)}
-                        />
-                        {isLegMode && legPlan && (
-                          <div ref={planRef}>
-                            <RacePlan 
-                                raceName={raceName}
-                                legPlan={legPlan}
-                                computation={computation}
-                                startDate={startDate}
-                                startTime={startTime}
-                                focusedLegId={focusedLegId}
-                                raceEvents={raceEvents}
-                                nightPeriods={nightPeriods}
-                                chartData={computation.chartData}
-                                checklistItems={checklistItems}
-                                feedbackItems={feedbackItems}
-                                showChecklist={showChecklist}
-                                showFeedback={showFeedback}
-                                onPrint={handlePrintPlan}
-                            />
-                           </div>
-                        )}
-                    </div>
+        <div className="min-h-screen bg-background text-text font-sans flex flex-col h-screen">
+            <header className="w-full bg-panel/80 backdrop-blur-sm p-4 lg:px-6 border-b border-slate-700/50 flex flex-col sm:flex-row justify-between items-center gap-4 flex-shrink-0">
+                <div className="flex items-center gap-4">
+                    <Logo />
+                    <h1 className="text-2xl font-bold tracking-tight">Ultra Planner</h1>
                 </div>
-            </main>
-            <WelcomeModal isOpen={isWelcomeModalOpen} onClose={handleCloseWelcomeModal} />
-            <ProfileModal 
+                <div className="flex items-center gap-2">
+                    <Button onClick={() => setIsWelcomeModalOpen(true)}>App Guide</Button>
+                    <Button onClick={handleDownloadManual}>Download Manual</Button>
+                    <Button onClick={() => setIsRunnerCardsModalOpen(true)} disabled={!isLegMode}>Print Cards</Button>
+                </div>
+            </header>
+
+            <div className="flex flex-1 flex-col lg:flex-row overflow-hidden">
+                <aside className="w-full lg:w-[450px] lg:max-w-[450px] bg-panel/80 backdrop-blur-sm p-4 lg:p-6 space-y-6 overflow-y-auto border-r border-slate-700/50">
+                    <Controls
+                        raceName={raceName} setRaceName={setRaceName}
+                        flatTimeStr={flatTimeStr}
+                        distanceKm={distanceKm} setDistanceKm={setDistanceKm}
+                        startDate={startDate} setStartDate={setStartDate}
+                        startTime={startTime} setStartTime={setStartTime}
+                        nightFrom={nightFrom} setNightFrom={setNightFrom}
+                        nightTo={nightTo} setNightTo={setNightTo}
+                        tempC={tempC} setTempC={setTempC}
+                        nightTempDrop={nightTempDrop} setNightTempDrop={setNightTempDrop}
+                        humPct={humPct} setHumPct={setHumPct}
+                        sun={sun} setSun={setSun}
+                        gpxData={gpxData} setGpxData={setGpxData}
+                        gpxFileName={gpxFileName} setGpxFileName={setGpxFileName}
+                        onGpxLoad={parseGPX}
+                        legs={legs}
+                        isLegMode={isLegMode}
+                        fillLegsFromGpx={fillLegsFromGpx}
+                        openProfileModal={() => setIsProfileModalOpen(true)}
+                        openHowModal={() => setIsWhyModalOpen(true)}
+                        openSleepInfoModal={() => setIsSleepInfoModalOpen(true)}
+                        openNightInfoModal={() => setIsNightInfoModalOpen(true)}
+                        openRiegelInfoModal={() => setIsRiegelInfoModalOpen(true)}
+                        carbsPerHour={carbsPerHour} setCarbsPerHour={setCarbsPerHour}
+                        waterPerHour={waterPerHour} setWaterPerHour={setWaterPerHour}
+                        sunTimesAvailable={!!sunTimes.sunrise}
+                        modelType={modelType} setModelType={setModelType}
+                        goalTimeStr={goalTimeStr} setGoalTimeStr={setGoalTimeStr}
+                        computationFlatTime={computation?.flatTime}
+                        isSleepPlanned={isSleepPlanned} setIsSleepPlanned={setIsSleepPlanned}
+                        referenceDistance={referenceDistance} setReferenceDistance={setReferenceDistance}
+                        referenceTimeStr={referenceTimeStr} setReferenceTimeStr={setReferenceTimeStr}
+                        showChecklist={showChecklist} setShowChecklist={setShowChecklist}
+                        showFeedback={showFeedback} setShowFeedback={setShowFeedback}
+                        isGreyscale={isGreyscale} setIsGreyscale={setIsGreyscale}
+                    />
+                     <div className="space-y-6">
+                        <LegsEditor
+                            legs={legs} setLegs={setLegs}
+                            isLegMode={isLegMode} setIsLegMode={setIsLegMode}
+                            simpleGain={simpleGain} setSimpleGain={setSimpleGain}
+                            simpleLoss={simpleLoss} setSimpleLoss={setSimpleLoss}
+                            simpleTerrain={simpleTerrain} setSimpleTerrain={setSimpleTerrain}
+                            distanceKm={distanceKm}
+                            isSleepPlanned={isSleepPlanned}
+                            openLegsInfoModal={() => setIsLegsInfoModalOpen(true)}
+                            openAutoNotesInfoModal={() => setIsAutoNotesInfoModalOpen(true)}
+                            openFromDistInfoModal={() => setIsFromDistInfoModalOpen(true)}
+                            openAidStationModal={() => setIsAidStationModalOpen(true)}
+                            setTuningLeg={setTuningLeg}
+                            onFocusLeg={focusOnLeg}
+                            onAutoFillNotes={handleAutoFillNotes}
+                            onOpenMentalStrategy={() => setIsMentalStrategyModalOpen(true)}
+                        />
+                         {isLegMode && <MarkersEditor markers={markers} setMarkers={setMarkers} />}
+                     </div>
+                </aside>
+                <main className="flex-1 p-4 lg:p-6 space-y-6 overflow-y-auto">
+                    <Visuals
+                        computation={computation}
+                        smoothM={smoothM} setSmoothM={setSmoothM}
+                        legs={legs} isLegMode={isLegMode}
+                        nightPeriods={nightPeriods}
+                        raceEvents={raceEvents}
+                        startDate={startDate} startTime={startTime}
+                        nightFrom={nightFrom} nightTo={nightTo}
+                        isChartExpanded={isChartExpanded}
+                        setIsChartExpanded={setIsChartExpanded}
+                        openTimeBreakdownExplanationModal={() => setIsTimeBreakdownExplanationModalOpen(true)}
+                    />
+                    {isLegMode && legPlan && <div ref={planRef}><RacePlan
+                        raceName={raceName}
+                        legPlan={legPlan}
+                        computation={computation}
+                        startDate={startDate}
+                        startTime={startTime}
+                        focusedLegId={focusedLegId}
+                        raceEvents={raceEvents}
+                        nightPeriods={nightPeriods}
+                        chartData={computation?.chartData}
+                        checklistItems={checklistItems}
+                        feedbackItems={feedbackItems}
+                        showChecklist={showChecklist}
+                        showFeedback={showFeedback}
+                        onPrint={() => { /* Implement print logic if needed */ }}
+                    /></div>}
+                </main>
+            </div>
+
+            <ProfileModal
                 isOpen={isProfileModalOpen}
                 onClose={() => setIsProfileModalOpen(false)}
                 profile={profile}
@@ -1304,210 +1140,125 @@ const App: React.FC = () => {
                 openHikeInfoModal={() => setIsHikeInfoModalOpen(true)}
                 finalTime={computation?.finalTime}
             />
-             <MentalStrategyModal
-                isOpen={isMentalStrategyModalOpen}
-                onClose={() => setIsMentalStrategyModalOpen(false)}
-                initialSelected={selectedNoteModules}
-                onSave={setSelectedNoteModules}
-            />
-            <InfoModal isOpen={isWhyModalOpen} onClose={() => setIsWhyModalOpen(false)} title="Understanding the Runner Profile" size="4xl">
-                 <table className="w-full text-sm text-left text-slate-400">
-                    <thead className="text-xs text-slate-300 uppercase bg-slate-700">
-                        <tr>
-                            <th scope="col" className="px-4 py-2">Parameter</th>
-                            <th scope="col" className="px-4 py-2">Default Value</th>
-                            <th scope="col" className="px-4 py-2">What it Means</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {whyRows.map(([param, val, desc]) => (
-                             <tr key={param} className="border-b border-slate-700">
-                                <th scope="row" className="px-4 py-3 font-medium text-text whitespace-nowrap">{param}</th>
-                                <td className="px-4 py-3 font-mono">{val}</td>
-                                <td className="px-4 py-3">{desc}</td>
-                            </tr>
-                        ))}
-                    </tbody>
+            <InfoModal isOpen={isWhyModalOpen} onClose={() => setIsWhyModalOpen(false)} title="Why These Numbers?">
+                <table className="w-full text-sm text-left">
+                    <thead><tr className="border-b border-slate-600"><th className="pb-2">Parameter</th><th className="pb-2">Default</th><th className="pb-2">Description</th></tr></thead>
+                    <tbody>{whyRows.map(([param, val, desc]) => (<tr key={param} className="border-b border-slate-700/50"><td className="py-2 pr-4 font-semibold">{param}</td><td className="py-2 pr-4 font-mono">{val}</td><td className="py-2 text-slate-400">{desc}</td></tr>))}</tbody>
                 </table>
             </InfoModal>
-             <InfoModal isOpen={isLegsInfoModalOpen} onClose={() => setIsLegsInfoModalOpen(false)} title="Simple vs. By Legs Mode" size="3xl">
-                <div className="space-y-4 text-slate-300">
-                    <div>
-                        <h3 className="font-semibold text-lg text-accent">Simple Mode</h3>
-                        <p>Best for quick estimates and races with consistent terrain where you don't need a detailed aid station plan. You provide the total distance, gain, and loss, and the model treats the entire race as a single effort.</p>
-                    </div>
-                     <div>
-                        <h3 className="font-semibold text-lg text-accent">By Legs Mode</h3>
-                        <p>This is the full-featured planner. It allows you to break the race down into segments between aid stations. Each "leg" can have its own distance, elevation, terrain profile, and planned stop time. This provides a much more accurate prediction and generates a detailed, printable race plan.</p>
-                        <ul className="list-disc list-inside mt-2 space-y-1">
-                            <li>Use the "Create Legs" tools to quickly generate legs from a list of distances or by splitting the total distance evenly.</li>
-                            <li>Click "Fill Leg Elevation" after importing a GPX file to automatically calculate the gain and loss for each leg based on the course data.</li>
-                            <li>Use the "Fine Tune Terrain" button for any leg where the surface varies significantly (e.g., a mix of road, trail, and technical sections).</li>
-                        </ul>
-                    </div>
+            <InfoModal isOpen={isRiegelInfoModalOpen} onClose={() => setIsRiegelInfoModalOpen(false)} title="Time Conversion Model">
+                <div className="prose prose-invert max-w-none prose-p:text-slate-300">
+                    <p>To predict your ultramarathon time from a shorter race (like a marathon), we use the well-regarded <strong>Riegel endurance model</strong>.</p>
+                    <p>The formula is: <code>T2 = T1 * (D2 / D1) ^ 1.06</code></p>
+                    <ul className="text-sm">
+                        <li><strong>T1</strong> is your time for the known distance (<strong>D1</strong>).</li>
+                        <li><strong>T2</strong> is the predicted time for the target distance (<strong>D2</strong>).</li>
+                        <li>The <strong>^ 1.06</strong> exponent is the key; it's a research-backed factor that accounts for how your pace naturally slows over longer distances due to fatigue.</li>
+                    </ul>
+                    <p>This gives us a "flat time" - your theoretical best-case time on a perfectly flat course, which becomes the baseline for all other calculations.</p>
                 </div>
             </InfoModal>
-            <InfoModal isOpen={isAutoNotesInfoModalOpen} onClose={() => setIsAutoNotesInfoModalOpen(false)} title="Automatic Strategy Notes Logic" size="3xl">
-                <div className="space-y-4 text-slate-300">
-                    <p>
-                        This feature automatically populates the notes fields with context-aware advice for the runner, crew, and pacers. It uses a hierarchical logic based on your race plan to provide the right support when it's needed most.
-                    </p>
-                    
-                    <div className="space-y-3 p-3 bg-slate-800 rounded-lg">
-                        <h4 className="font-bold text-lg text-accent2">1. For the Runner (Personal Notes)</h4>
-                        <p className="text-sm">Analyzes each leg and assigns mental cues based on race position. You can customize the focus by selecting a "Mental Strategy".</p>
-                        <ul className="list-disc list-inside text-sm space-y-1 pl-4">
-                            <li><strong>Night Legs:</strong> Focus on safety and reaching sunrise.</li>
-                            <li><strong>Final 10%:</strong> Cues to "empty the tank" and finish strong.</li>
-                            <li><strong>After 60%:</strong> Notes on resilience for the "pain cave".</li>
-                            <li><strong>First 15%:</strong> Reminders to stay conservative and patient.</li>
-                            <li><strong>Mid-Race:</strong> Process-oriented notes for "the long grind".</li>
-                        </ul>
-                    </div>
-
-                    <div className="space-y-3 p-3 bg-slate-800 rounded-lg">
-                        <h4 className="font-bold text-lg text-accent2">2. For the Crew (Aid Station Notes)</h4>
-                        <p className="text-sm">For crew-accessible aid stations, it generates a "DO/SAY" script based on the runner's ETA and race position.</p>
-                        <ul className="list-disc list-inside text-sm space-y-1 pl-4">
-                            <li><strong>Night Stations:</strong> Focus on warmth, safety, and simple questions.</li>
-                            <li><strong>Final 15%:</strong> Urgent motivation and efficiency. Get them out fast!</li>
-                            <li><strong>Mid-Race (30%-85%):</strong> Proactive problem-solving (nutrition, feet, gear).</li>
-                            <li><strong>Early Stations (&lt;30%):</strong> Be an "F1 Pit Crew". Fast, efficient, positive.</li>
-                        </ul>
-                    </div>
-
-                    <div className="space-y-3 p-3 bg-slate-800 rounded-lg">
-                        <h4 className="font-bold text-lg text-accent2">3. For the Pacer (Pacer Cards)</h4>
-                        <p className="text-sm">For legs with a pacer, it populates a dedicated "Pacer Notes" field, which is used to generate a separate set of printable cards.</p>
-                        <ul className="list-disc list-inside text-sm space-y-1 pl-4">
-                            <li><strong>Night Pacing:</strong> Be a "Guardian". Focus on safety, light, and direct commands.</li>
-                            <li><strong>Final Pacing (&gt;75%):</strong> Be a "Closer". Break down distance and provide strong motivation.</li>
-                            <li><strong>Default Pacing:</strong> Be a "Strategist". Take over the mental load of nutrition, timing, and upcoming terrain.</li>
-                        </ul>
-                    </div>
-                </div>
-            </InfoModal>
-             <InfoModal isOpen={isSleepInfoModalOpen} onClose={() => setIsSleepInfoModalOpen(false)} title="Sleep Strategy Model" size="3xl">
-                <div className="space-y-4 text-slate-300">
-                     <p>Planning for sleep is critical in multi-day ultras. Enabling this feature adds a sleep duration slider to each aid station in the "By Legs" editor.</p>
-                     <p>When you add a sleep stop, the model does two things:</p>
-                     <ul className="list-disc list-inside mt-2 space-y-2">
-                        <li>Adds the sleep duration to your total stop time at that aid station.</li>
-                        <li>Reduces your accumulated fatigue, which slows you down over the course of the race. This simulates the restorative effect of sleep.</li>
+             <InfoModal isOpen={isLegsInfoModalOpen} onClose={() => setIsLegsInfoModalOpen(false)} title="Simple vs. By Legs Mode">
+                 <div className="prose prose-invert max-w-none prose-p:text-slate-300">
+                     <p>You have two ways to define your course:</p>
+                     <h4>Simple Mode</h4>
+                     <p>This is for a quick, high-level estimate. The entire race is treated as one single segment. You input the total distance, gain, loss, and an overall terrain type. It's fast, but not as accurate as "By Legs" mode.</p>
+                     <h4>By Legs Mode</h4>
+                     <p>This is the recommended mode for detailed race planning. It allows you to break the course into segments (legs) between aid stations. For each leg, you can specify:</p>
+                     <ul>
+                         <li>Distance, gain, and loss</li>
+                         <li>Terrain type</li>
+                         <li>Planned stop time at the aid station</li>
+                         <li>Crew access, drop bags, and pacer swaps</li>
+                         <li>Custom notes for yourself, your crew, and your pacer</li>
                      </ul>
-                      <div className="p-3 bg-slate-800 rounded-lg">
-                        <h4 className="font-semibold text-accent2">How Fatigue Reset Works:</h4>
-                        <p className="text-sm">The amount of fatigue "reset" is non-linear. Short naps provide a significant boost, but with diminishing returns for longer stops. Our new advanced model provides separate recovery for metabolic and muscular fatigue.</p>
-                        <ul className="text-sm list-disc list-inside mt-2 space-y-1">
-                            <li><strong>30 minutes:</strong> ~20% metabolic reset / 5% muscular reset</li>
-                            <li><strong>90 minutes:</strong> ~50% metabolic reset / 20% muscular reset</li>
-                            <li><strong>3 hours:</strong> ~80% metabolic reset / 30% muscular reset</li>
-                        </ul>
-                         <p className="text-xs text-muted mt-2">This feature allows you to strategically plan short naps to maintain a stronger pace in the later stages of a long race, and see the impact on your overall finish time.</p>
-                      </div>
-                </div>
+                     <p>Using "By Legs" mode is essential for generating printable race plans and runner/pacer cards.</p>
+                 </div>
             </InfoModal>
-             <InfoModal isOpen={isNightInfoModalOpen} onClose={() => setIsNightInfoModalOpen(false)} title="Weather & Night Model" size="3xl">
-                <div className="space-y-4 text-slate-300">
-                     <p>Environmental factors can have a huge impact on your pace. The model accounts for them in several ways:</p>
-                     <ul className="list-disc list-inside mt-2 space-y-2">
-                        <li><strong className="text-accent">Temperature:</strong> Pace is penalized for every 10°C above a baseline of 15°C. Your "Heat Acclimation" profile setting can reduce this penalty.</li>
-                         <li><strong className="text-accent">Humidity:</strong> A smaller penalty is applied for humidity over 60%.</li>
-                         <li><strong className="text-accent">Sun:</strong> A small penalty is applied for direct sun, and a small bonus for overcast conditions.</li>
-                         <li><strong className="text-accent">Night Running:</strong> When running between the specified sunset and sunrise times, a pace penalty is applied based on your "Night Confidence" profile setting. This accounts for challenges with visibility and navigation in the dark. If you load a GPX file, the sunset/sunrise times will be automatically calculated for the race date and location.</li>
-                         <li><strong className="text-accent">Night Temperature Drop:</strong> The model will use the lower "night drop" temperature when calculating heat penalties during night hours.</li>
-                     </ul>
-                </div>
+            <InfoModal isOpen={isFromDistInfoModalOpen} onClose={() => setIsFromDistInfoModalOpen(false)} title="Build Legs From Distances">
+                <p>This is a quick way to create your legs. Find the list of distances between aid stations on the official race website, and paste them here, separated by commas, spaces, or new lines. Example: <code>12.6, 13.3, 11.5, 16.4</code>. The tool will automatically create a leg for each distance.</p>
             </InfoModal>
-             <InfoModal isOpen={isHikeInfoModalOpen} onClose={() => setIsHikeInfoModalOpen(false)} title="The Strategic Hiking Model" size="3xl">
-                <div className="space-y-4 text-slate-300">
-                    <p>
-                        It can seem counterintuitive, but strategically hiking steep uphills often leads to a faster overall finish time in an ultramarathon. Our model captures this by simulating two distinct types of fatigue:
-                    </p>
-                    <div className="p-4 bg-slate-800 rounded-lg space-y-3">
-                        <div>
-                            <h4 className="font-semibold text-accent2">1. Metabolic Conservation (The "Engine")</h4>
-                            <p className="text-sm">
-                                On steep grades, running becomes very inefficient. Your heart rate spikes, and you burn through energy reserves (glycogen) at a high rate. Power-hiking the same section at a similar vertical speed is metabolically cheaper.
-                            </p>
-                            <ul className="list-disc list-inside text-sm mt-1 ml-2">
-                                <li>The <strong className="text-text">Hiking Economy Bonus</strong> setting models this, reducing your "Metabolic Fatigue" accumulation on climbs.</li>
-                                <li>This means you conserve fuel and cardiovascular capacity for later in the race.</li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h4 className="font-semibold text-accent2">2. Muscular Damage Prevention (The "Chassis")</h4>
-                            <p className="text-sm">
-                                This is the most critical factor. Ultramarathon fatigue is often decided by muscular breakdown, not just running out of energy. Different activities stress your muscles differently:
-                            </p>
-                             <ul className="list-disc list-inside text-sm mt-1 ml-2">
-                                <li><strong>Downhill Running:</strong> Extremely damaging due to eccentric muscle contractions. This is the primary driver of late-race quad failure.</li>
-                                <li><strong>Uphill Running:</strong> Metabolically costly and still causes some muscular fatigue.</li>
-                                <li><strong>Power-Hiking:</strong> Very low impact and causes minimal muscular damage.</li>
-                            </ul>
-                            <p className="text-sm mt-2">
-                                By hiking uphills, you arrive at the top with fresher legs. This makes you significantly better at handling the punishing, muscle-trashing forces of the next descent.
-                            </p>
-                        </div>
-                    </div>
-                    <div>
-                        <h4 className="font-semibold text-accent">The Payoff: Why It's Faster</h4>
-                        <p>
-                            The model simulates this trade-off. The small amount of time you "lose" by hiking is more than compensated for later on. Because your <strong className="text-text">Muscular Damage Score</strong> is lower, your overall pace degrades far less in the second half of the race. You maintain the ability to run the flats and downhills effectively, leading to a much stronger finish and a faster overall time.
-                        </p>
-                    </div>
-                </div>
+             <InfoModal isOpen={isAutoNotesInfoModalOpen} onClose={() => setIsAutoNotesInfoModalOpen(false)} title="Auto-fill Notes Logic">
+                 <p>This feature intelligently generates helpful notes based on your race plan. It considers:</p>
+                 <ul className="list-disc list-inside space-y-1 text-sm">
+                     <li><strong>Race Position:</strong> Early-race notes focus on conservative pacing, while late-race notes are about finishing strong.</li>
+                     <li><strong>Time of Day & Weather:</strong> It analyzes your pace against sunrise/sunset and the day's temperature to provide timely notes about headlamps or cooling strategies.</li>
+                     <li><strong>Mental Strategy:</strong> The system will inject notes from the "helper" modules you selected in the Mental Strategy modal, targeting your specific weaknesses.</li>
+                 </ul>
             </InfoModal>
-             <InfoModal isOpen={isRiegelInfoModalOpen} onClose={() => setIsRiegelInfoModalOpen(false)} title="Time Conversion Model" size="2xl">
-                <div className="space-y-4 text-slate-300 prose prose-invert max-w-none prose-p:text-slate-300 prose-strong:text-accent2">
-                    <p>
-                        To predict your race time, the planner first needs a baseline: an estimate of how fast you could run your race distance on a perfectly flat course.
-                    </p>
-                    <p>
-                        When you provide a time for a different distance (like a marathon), we use the well-regarded <strong>Riegel Endurance Model</strong> to calculate this baseline. The formula is:
-                    </p>
-                    <p className="text-center font-mono bg-slate-800 p-2 rounded">
-                        T2 = T1 * (D2 / D1) ^ 1.06
-                    </p>
-                    <p>
-                        This model accurately predicts how pace naturally fades over longer distances. The calculated time represents a <strong>best-case scenario</strong>, assuming you have adequately trained for the specific distance and demands of your target race (e.g., you've done the long runs).
-                    </p>
-                    <p>
-                        For a more realistic prediction, you should fine-tune your <strong>Runner Profile</strong> to match your current training status, especially your muscular resilience to downhills.
-                    </p>
-                </div>
+            <InfoModal isOpen={isSleepInfoModalOpen} onClose={() => setIsSleepInfoModalOpen(false)} title="Sleep Planning & Fatigue Reset">
+                 <div className="prose prose-invert max-w-none prose-p:text-slate-300 prose-li:text-slate-300 prose-strong:text-slate-100">
+                    <p>Enabling 'Plan for sleep stops?' allows you to add sleep time at aid stations. This applies a 'fatigue reset' bonus to the model, differentiating between metabolic and muscular recovery:</p>
+                    <ul className="!my-4 space-y-2">
+                        <li>
+                            <strong>Metabolic Recovery:</strong> The first 20-30 minutes provide the most significant benefit for mental and cardio revival, with diminishing returns after. Governed by the <code>getFatigueReset()</code> function.
+                        </li>
+                        <li>
+                            <strong>Muscular Recovery:</strong> Deep muscular damage requires longer rest. The model (<code>getMuscularFatigueReset()</code>) applies a smaller, slower reset for this, reflecting that short naps won't fully repair trashed quads.
+                        </li>
+                        <li>
+                            <strong>Example:</strong> A 30-minute nap provides a 20% metabolic fatigue reset but only a 5% muscular reset.
+                        </li>
+                    </ul>
+                 </div>
             </InfoModal>
-            <TimeBreakdownExplanationModal
-                isOpen={isTimeBreakdownExplanationModalOpen}
-                onClose={() => setIsTimeBreakdownExplanationModalOpen(false)}
-                computation={computation}
-                referenceDistance={referenceDistance}
-                referenceTimeStr={referenceTimeStr}
-            />
-            <TerrainTuningModal 
+            <InfoModal isOpen={isNightInfoModalOpen} onClose={() => setIsNightInfoModalOpen(false)} title="Weather & Night Model">
+                <p>The model applies pace penalties based on environmental conditions:</p>
+                <ul className="list-disc list-inside space-y-1 text-sm">
+                    <li><strong>Heat/Humidity:</strong> A penalty is calculated based on temperature and humidity. Your "Heat Acclimation" profile setting can reduce this penalty.</li>
+                    <li><strong>Sun:</strong> "Sunny" adds a small penalty; "Overcast" provides a small bonus.</li>
+                    <li><strong>Night Running:</strong> A penalty is applied during night hours (between sunset and sunrise) to account for reduced visibility and navigation challenges. Your "Night Confidence" setting determines the size of this penalty (High=0%, Medium=5%, Low=10%).</li>
+                </ul>
+            </InfoModal>
+             <InfoModal isOpen={isHikeInfoModalOpen} onClose={() => setIsHikeInfoModalOpen(false)} title="Strategic Hiking Model">
+                 <div className="prose prose-invert max-w-none prose-p:text-slate-300">
+                    <p>When enabled, the model will automatically switch from running to "power-hiking" on climbs steeper than your "Hike Threshold".</p>
+                    <h4>Why is this faster overall?</h4>
+                    <ol>
+                        <li><strong>Metabolic Savings:</strong> Hiking is less aerobically costly than running uphill. The "Hiking Economy Bonus" profile setting models this energy saving, reducing your metabolic fatigue accumulation.</li>
+                        <li><strong>Muscular Preservation:</strong> Hiking is significantly less damaging to your muscles than running uphill. This dramatically reduces your "Muscular Damage Score", keeping your legs fresher for later in the race.</li>
+                    </ol>
+                    <p>For almost all non-elite ultrarunners, strategic hiking on climbs leads to a faster finish time. Your hiking speed is determined by your <strong>VAM (Vertical Ascent in Meters per hour)</strong> setting.</p>
+                 </div>
+            </InfoModal>
+            <TerrainTuningModal
                 isOpen={!!tuningLeg}
                 onClose={() => setTuningLeg(null)}
                 leg={tuningLeg}
-                onSave={handleTuningSave}
+                onSave={handleSaveTuning}
             />
-            <AidStationTemplateModal 
+            <AidStationTemplateModal
                 isOpen={isAidStationModalOpen}
                 onClose={() => setIsAidStationModalOpen(false)}
                 initialChecklist={checklistItems}
                 initialFeedback={feedbackItems}
-                onSave={handleSaveTemplates}
+                onSave={handleSaveAidStationTemplates}
             />
-            <RunnerCardsModal
-                isOpen={isRunnerCardsModalOpen}
-                onClose={() => setIsRunnerCardsModalOpen(false)}
+            <RunnerCardsModal 
+                isOpen={isRunnerCardsModalOpen} 
+                onClose={() => setIsRunnerCardsModalOpen(false)} 
                 legPlan={legPlan}
                 raceName={raceName}
                 raceEvents={raceEvents}
                 nightPeriods={nightPeriods}
                 isGreyscale={isGreyscale}
             />
+            <MentalStrategyModal
+                isOpen={isMentalStrategyModalOpen}
+                onClose={() => setIsMentalStrategyModalOpen(false)}
+                initialSelected={selectedNoteModules}
+                onSave={setSelectedNoteModules}
+            />
+            <TimeBreakdownExplanationModal 
+                isOpen={isTimeBreakdownExplanationModalOpen}
+                onClose={() => setIsTimeBreakdownExplanationModalOpen(false)}
+                computation={computation}
+                referenceDistance={referenceDistance}
+                referenceTimeStr={referenceTimeStr}
+            />
+            <WelcomeModal isOpen={isWelcomeModalOpen} onClose={() => setIsWelcomeModalOpen(false)} />
         </div>
     );
-};
+}
 
 export default App;
